@@ -1,0 +1,1770 @@
+; Zilog eZ80 ANSI C Compiler Release 3.4
+; -optsize -noreduceopt -nomodsect -peephole -globalopt
+; -localcse -const=ROM 
+	FILE	"SRC\HELPERS.C"
+	.assume ADL=1
+	SEGMENT BSS
+_mon_vars:
+	DS	24
+_isCurrentVar:
+	DS	1
+;    1	//---------------------------------------------------
+;    2	//
+;    3	//	GBoot v0.0
+;    4	//	NotArtyom
+;    5	//	02/11/18
+;    6	//
+;    7	//---------------------------------------------------
+;    8	
+;    9		#include <stddef.h>
+;   10		#include <stdarg.h>
+;   11		#include <stdbool.h>
+;   12		#include <stdio.h>
+;   13	
+;   14		#include <assert.h>
+;   15		#include <tice.h>
+;   16		#include <keypadc.h>
+;   17		#include <ctype.h>
+;   18		#include <string.h>
+;   19	
+;   20		#include "gshell.h"
+;   21	
+;   22	//---------------------------------------------------
+;   23	
+;   24	extern bool doExit;
+;   25	extern char* parse;
+;   26	extern char *current_addr;
+;   27	extern char *end_addr;
+;   28	
+;   29	extern uint32_t mon_vars[];
+;   30	
+;   31	uint32_t mon_vars[6];
+;   32	bool isCurrentVar;
+	SEGMENT CODE
+;   33	
+;   34	//---------------------------------------------------
+;   35	
+;   36	int putchar(int c) {
+_putchar:
+	LD	HL,-2
+	CALL	__frameset
+;   37		char tmp_str[2];
+;   38		tmp_str[0] = c;
+	LD	A,(IX+6)
+;   39		tmp_str[1] = '\0';
+	LEA	HL,IX+-2
+	INC	HL
+	LD	(IX+-2),A
+	LD	(HL),0
+;   40		if (c == '\n' || c == '\r') _OS(asm_NewLine);
+	LD	HL,(IX+6)
+	OR	A,A
+	LD	BC,10
+	SBC	HL,BC
+	JR	Z,L_2
+	LD	BC,13
+	LD	HL,(IX+6)
+	OR	A,A
+	SBC	HL,BC
+	JR	NZ,L_3
+L_2:
+	LD	BC,_asm_NewLine
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+;   41		else if (c != '\0') os_PutStrFull(tmp_str);
+	JR	L_4
+L_3:
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	JR	Z,L_4
+	PEA	IX+-2
+	CALL	_os_PutStrFull
+	POP	BC
+L_4:
+;   42		return true;
+	LD	HL,1
+;   43	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _putchar ***************************
+;Name                         Addr/Register   Size   Type
+;_os_PutStrFull                      IMPORT  -----   function
+;_asm_NewLine                        IMPORT  -----   function
+;__OS                                IMPORT  -----   function
+;tmp_str                               IX-2      2   variable
+;c                                     IX+6      3   parameter
+
+
+; Stack Frame Size: 11 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;   44	
+;   45	void puts(char *str) {
+_puts:
+	LD	HL,-6
+	CALL	__frameset
+;   46		int i;
+;   47		int len = strlen((char*)str);
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_strlen
+	POP	BC
+	LD	(IX+-6),HL
+;   48		for (i = 0; i < len; i++) putchar(str[i]);
+	LD	BC,0
+	LD	(IX+-3),BC
+	JR	L_9
+L_7:
+	LD	BC,(IX+-3)
+	LD	HL,(IX+6)
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_9:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_7
+;   49		_OS(asm_NewLine);
+	LD	BC,_asm_NewLine
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+;   50	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _puts ***************************
+;Name                         Addr/Register   Size   Type
+;_asm_NewLine                        IMPORT  -----   function
+;__OS                                IMPORT  -----   function
+;_putchar                            IMPORT  -----   function
+;_strlen                             IMPORT  -----   function
+;len                                   IX-6      3   variable
+;i                                     IX-3      3   variable
+;str                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 15 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT BSS
+_alphaToggle:
+	DS	1
+_altToggle:
+	DS	1
+;   51	
+;   52	bool alphaToggle, altToggle;
+	SEGMENT CODE
+;   53	char *gets(char *buff, int len) {
+_gets:
+	LD	HL,-39
+	CALL	__frameset
+;   54		const char *std_chars = "\0\0\0\0\0\0\0\0\0\0+-*/^\0\0?369\)G\0\0.258\(FC\0000147\,EB\0\0XSNIDA\0\\%\0\0\0\0\0";
+	LD	BC,L__6
+	LD	(IX+-36),BC
+;   55		const char *alpha_chars = "\0\0\0\0\0\0\0\0\0\0\"WRMH\0\0?[VQLG\0\0:ZUPKFC\0 YTOJEB\0\0XSNIDA\0\\%\0\0\0\0\0";
+	LD	BC,L__7
+	LD	(IX+-39),BC
+;   56		const char *alt_chars = "\0\0\0\0\0\0\0\0\0\0\0\]\[e\0\0\0\0\0\0w\}\0\0\0\0\0\0v\{\0\0\000\0\0\0u\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+	LD	BC,L__8
+	LD	(IX+-18),BC
+;   57		uint8_t key, j, i = 0;
+	LD	(IX+-1),0
+;   58		alphaToggle = 0;
+	XOR	A,A
+	LD	(_alphaToggle),A
+;   59		altToggle = 0;
+	XOR	A,A
+	LD	(_altToggle),A
+;   60	
+;   61		while((key = os_GetCSC()) != sk_Enter && i < len) {
+	JR	L_41
+L_42:
+;   62			if (key == sk_Clear) {
+	LD	A,(IX+-2)
+	CP	A,15
+	JR	NZ,L_40
+;   63				_OS(asm_ClrLCD);
+	LD	BC,_asm_ClrLCD
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+;   64				_OS(asm_HomeUp);
+	LD	BC,_asm_HomeUp
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+;   65				print_prompt();
+	CALL	_print_prompt
+;   66				for (j = 0; buff[j] != '\0' && j < i; j++) putchar(buff[j]);
+	LD	(IX+-3),0
+	JR	L_17
+L_15:
+	LD	HL,(IX+-24)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+	INC	(IX+-3)
+L_17:
+	LD	A,(IX+-3)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	(IX+-24),HL
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_41
+	LD	A,(IX+-3)
+	CP	A,(IX+-1)
+	JR	C,L_15
+	JR	L_41
+;   67			} else if (key == sk_Del && i > 0) {
+L_40:
+	LD	A,(IX+-2)
+	CP	A,56
+	JR	NZ,L_38
+	XOR	A,A
+	CP	A,(IX+-1)
+	JR	NC,L_38
+;   68				unsigned int col, row;
+;   69				os_GetCursorPos(&row, &col);	// Get the current cursor position
+	PEA	IX+-6
+	PEA	IX+-21
+	CALL	_os_GetCursorPos
+	POP	BC
+	POP	BC
+;   70				col -= 1;
+	LD	IY,(IX+-6)
+	LEA	IY,IY+-1
+	LD	(IX+-6),IY
+;   71				os_SetCursorPos(row, col);	// Set the cursor position back by 1
+	LD	C,(IX+-6)
+	LD	B,0
+	PUSH	BC
+	LD	C,(IX+-21)
+	PUSH	BC
+	CALL	_os_SetCursorPos
+	POP	BC
+	POP	BC
+;   72				putchar(' ');
+	LD	BC,32
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;   73				os_SetCursorPos(row, col);	// Set the cursor position back by 1
+	LD	C,(IX+-6)
+	LD	B,0
+	PUSH	BC
+	LD	C,(IX+-21)
+	PUSH	BC
+	CALL	_os_SetCursorPos
+	POP	BC
+	POP	BC
+;   74				i--;
+	DEC	(IX+-1)
+;   75				buff[i] = ' ';
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	(HL),32
+;   76			} else if (key == sk_Alpha) alphaToggle = ~alphaToggle;
+	JR	L_41
+L_38:
+	LD	A,(IX+-2)
+	CP	A,48
+	JR	NZ,L_36
+	LD	A,(_alphaToggle)
+	CPL	
+	LD	(_alphaToggle),A
+;   77			else if (key == sk_2nd) altToggle = ~altToggle;
+	JR	L_41
+L_36:
+	LD	A,(IX+-2)
+	CP	A,54
+	JR	NZ,L_34
+	LD	A,(_altToggle)
+	CPL	
+	LD	(_altToggle),A
+;   78			else {
+	JR	L_41
+L_34:
+;   79				if (alphaToggle && std_chars[key]) {
+	LD	A,(_alphaToggle)
+	OR	A,A
+	JR	Z,L_32
+	LD	A,(IX+-2)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+-36)
+	ADD	HL,BC
+	LD	(IX+-27),HL
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_32
+;   80					buff[i] = std_chars[key];
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	(IX+-30),HL
+	LD	HL,(IX+-27)
+	LD	A,(HL)
+	LD	HL,(IX+-30)
+	LD	(HL),A
+;   81					if (altToggle && alt_chars[key]) buff[i] = alt_chars[key];
+	LD	A,(_altToggle)
+	OR	A,A
+	JR	Z,L_24
+	LD	A,(IX+-2)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+-18)
+	ADD	HL,BC
+	LD	(IX+-33),HL
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_24
+	LD	HL,(IX+-33)
+	LD	A,(HL)
+	LD	HL,(IX+-30)
+	LD	(HL),A
+L_24:
+;   82					putchar(buff[i++]);
+	LD	A,(IX+-1)
+	INC	(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;   83				} else if (!alphaToggle && alpha_chars[key]) {
+	JR	L_41
+L_32:
+	LD	A,(_alphaToggle)
+	OR	A,A
+	JR	NZ,L_41
+	LD	A,(IX+-2)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+-39)
+	ADD	HL,BC
+	LD	(IX+-9),HL
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_41
+;   84					buff[i] = alpha_chars[key];
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	(IX+-12),HL
+	LD	HL,(IX+-9)
+	LD	A,(HL)
+	LD	HL,(IX+-12)
+	LD	(HL),A
+;   85					if (altToggle && alt_chars[key]) buff[i] = alt_chars[key];
+	LD	A,(_altToggle)
+	OR	A,A
+	JR	Z,L_29
+	LD	A,(IX+-2)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+-18)
+	ADD	HL,BC
+	LD	(IX+-15),HL
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_29
+	LD	HL,(IX+-15)
+	LD	A,(HL)
+	LD	HL,(IX+-12)
+	LD	(HL),A
+L_29:
+;   86					putchar(buff[i++]);
+	LD	A,(IX+-1)
+	INC	(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;   87				}
+;   88			}
+;   89		}
+L_41:
+	CALL	_os_GetCSC
+	LD	(IX+-2),A
+	CP	A,9
+	JR	Z,L_43
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	OR	A,A
+	LD	BC,(IX+9)
+	SBC	HL,BC
+	JP	M,L_42
+L_43:
+;   90	
+;   91		buff[i] = '\0';
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,(IX+6)
+	ADD	HL,BC
+	LD	(HL),0
+;   92		return buff;
+	LD	HL,(IX+6)
+;   93	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gets ***************************
+;Name                         Addr/Register   Size   Type
+;_os_GetCSC                          IMPORT  -----   function
+;_os_SetCursorPos                    IMPORT  -----   function
+;_os_GetCursorPos                    IMPORT  -----   function
+;_putchar                            IMPORT  -----   function
+;_print_prompt                       IMPORT  -----   function
+;_asm_HomeUp                         IMPORT  -----   function
+;_asm_ClrLCD                         IMPORT  -----   function
+;__OS                                IMPORT  -----   function
+;_altToggle                          STATIC      1   variable
+;_alphaToggle                        STATIC      1   variable
+;alpha_chars                          IX-39      3   variable
+;std_chars                            IX-36      3   variable
+;G_2                                  IX-33      3   variable
+;G_3                                  IX-30      3   variable
+;G_1                                  IX-27      3   variable
+;G_0                                  IX-24      3   variable
+;row                                  IX-21      3   variable
+;alt_chars                            IX-18      3   variable
+;G_5                                  IX-15      3   variable
+;G_6                                  IX-12      3   variable
+;G_4                                   IX-9      3   variable
+;col                                   IX-6      3   variable
+;j                                     IX-3      1   variable
+;key                                   IX-2      1   variable
+;i                                     IX-1      1   variable
+;len                                   IX+9      3   parameter
+;buff                                  IX+6      3   parameter
+
+
+; Stack Frame Size: 51 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__6:
+	DB	0,0,0,0,0,0,0,0,0,0
+	DB	"+-*/^"
+	DB	0,0
+	DB	"?369)G"
+	DB	0,0
+	DB	".258(FC"
+	DB	0
+	DB	"0147,EB"
+	DB	0,0
+	DB	"XSNIDA"
+	DB	0
+	DB	"\\%"
+	DB	0,0,0,0,0,0
+L__7:
+	DB	0,0,0,0,0,0,0,0,0,0
+	DB	"\"WRMH"
+	DB	0,0
+	DB	"?[VQLG"
+	DB	0,0
+	DB	":ZUPKFC"
+	DB	0
+	DB	" YTOJEB"
+	DB	0,0
+	DB	"XSNIDA"
+	DB	0
+	DB	"\\%"
+	DB	0,0,0,0,0,0
+L__8:
+	DB	0,0,0,0,0,0,0,0,0,0,0
+	DB	"][e"
+	DB	0,0,0,0,0,0
+	DB	"w}"
+	DB	0,0,0,0,0,0
+	DB	"v{"
+	DB	0,0,0,0,0,0
+	DB	"u"
+	DB	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	SEGMENT CODE
+;   94	
+;   95	void print_prompt(void) {
+_print_prompt:
+;   96		putchar('(');
+	LD	BC,40
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;   97		printLong((uint32_t)current_addr);
+	LD	BC,(_current_addr)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;   98		if (end_addr != 0x00) {
+	LD	HL,(_end_addr)
+	CALL	__icmpzero
+	JR	Z,L_46
+;   99			putchar('.');
+	LD	BC,46
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;  100			printLong((uint32_t)end_addr);
+	LD	BC,(_end_addr)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;  101		}
+L_46:
+;  102		vprintf(")\n");
+	LD	BC,L__28
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  103		vprintf(" ~ ");
+	LD	BC,L__29
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  104	}
+	RET	
+
+
+;**************************** _print_prompt ***************************
+;Name                         Addr/Register   Size   Type
+;_vprintf                            IMPORT  -----   function
+;_end_addr                           IMPORT      3   variable
+;_current_addr                       IMPORT      3   variable
+;_printLong                          IMPORT  -----   function
+;_putchar                            IMPORT  -----   function
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__28:
+	DB	")"
+	DB	10,0
+L__29:
+	DB	" ~ "
+	DB	0
+	SEGMENT CODE
+;  105	
+;  106	bool isRange() {
+_isRange:
+	LD	HL,-4
+	CALL	__frameset
+;  107		char *tmpParse = parse;
+	LD	BC,(_parse)
+	LD	(IX+-3),BC
+;  108		while (*tmpParse != '.' && *tmpParse != ',' && *tmpParse != '\0') tmpParse++;
+	JR	L_51
+L_52:
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_51:
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,46
+	SBC	HL,BC
+	JR	NZ,L__32
+	LD	A,1
+	JR	L__33
+L__32:
+	XOR	A,A
+L__33:
+	LD	(IX+-4),A
+	OR	A,A
+	JR	NZ,L_55
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,44
+	SBC	HL,BC
+	JR	Z,L_55
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_52
+L_55:
+;  109		if (*tmpParse != '.' && *tmpParse != ',') return false;
+	LD	A,(IX+-4)
+	OR	A,A
+	JR	NZ,L_56
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,44
+	SBC	HL,BC
+	JR	Z,L_56
+	XOR	A,A
+	JR	L_57
+L_56:
+;  110		return true;
+	LD	A,1
+;  111	}
+L_57:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _isRange ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+;G_7                                   IX-4      1   variable
+;tmpParse                              IX-3      3   variable
+
+
+; Stack Frame Size: 10 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  112	
+;  113	bool isVar() {
+_isVar:
+	LD	HL,-3
+	CALL	__frameset
+;  114		if (islower(*parse) && (*(parse+1) == ' ' || !isalnum(*(parse+1)))) return true;
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_islower
+	POP	BC
+	CALL	__icmpzero
+	JR	Z,L_61
+	LD	BC,(_parse)
+	INC	BC
+	LD	(IX+-3),BC
+	LD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	JR	Z,L_60
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_isalnum
+	POP	BC
+	CALL	__icmpzero
+	JR	NZ,L_61
+L_60:
+	LD	A,1
+	JR	L_62
+L_61:
+;  115		return false;
+	XOR	A,A
+;  116	}
+L_62:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _isVar ***************************
+;Name                         Addr/Register   Size   Type
+;_isalnum                            IMPORT  -----   function
+;_parse                              IMPORT      3   variable
+;_islower                            IMPORT  -----   function
+;G_8                                   IX-3      3   variable
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  117	
+;  118	bool isArg() {
+_isArg:
+	LD	HL,-3
+	CALL	__frameset
+;  119		return (isVar() || isAddr());
+	CALL	_isVar
+	OR	A,A
+	JR	NZ,L_64
+	CALL	_isAddr
+	OR	A,A
+	JR	Z,L_65
+L_64:
+;  120	}
+	LD	BC,1
+	LD	(IX+-3),BC
+	JR	L_66
+L_65:
+	LD	BC,0
+	LD	(IX+-3),BC
+L_66:
+	LD	A,(IX+-3)
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _isArg ***************************
+;Name                         Addr/Register   Size   Type
+;_isAddr                             IMPORT  -----   function
+;_isVar                              IMPORT  -----   function
+;temp67                                IX-3      3   variable
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  121	
+;  122	bool setCurrents() {
+_setCurrents:
+;  123		skipBlank();
+	CALL	_skipBlank
+;  124		if (isVar()) isCurrentVar = true;
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_71
+	LD	A,1
+	LD	(_isCurrentVar),A
+;  125		else if (isAddr()) isCurrentVar = false;
+	JR	L_72
+L_71:
+	CALL	_isAddr
+	OR	A,A
+	JR	Z,L_72
+	XOR	A,A
+	LD	(_isCurrentVar),A
+L_72:
+;  126	
+;  127		return getRange(&current_addr, &end_addr);
+	LD	BC,_end_addr
+	PUSH	BC
+	LD	BC,_current_addr
+	PUSH	BC
+	CALL	_getRange
+	POP	BC
+	POP	BC
+;  128	}
+	RET	
+
+
+;**************************** _setCurrents ***************************
+;Name                         Addr/Register   Size   Type
+;_current_addr                       IMPORT      3   variable
+;_end_addr                           IMPORT      3   variable
+;_getRange                           IMPORT  -----   function
+;_isAddr                             IMPORT  -----   function
+;_isCurrentVar                       STATIC      1   variable
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  129	
+;  130	char* skipBlank() {
+_skipBlank:
+;  131		while (*parse == ' ') parse++;
+	JR	L_75
+L_76:
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+L_75:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	JR	Z,L_76
+;  132		return parse;
+	LD	HL,(_parse)
+;  133	}
+	RET	
+
+
+;**************************** _skipBlank ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  134	
+;  135	char* skipToken() {
+_skipToken:
+;  136		while (*parse != ' ' && *parse != '\0') parse++;
+	JR	L_81
+L_82:
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+L_81:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	JR	Z,L_83
+	LD	HL,(_parse)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_82
+L_83:
+;  137		return parse;
+	LD	HL,(_parse)
+;  138	}
+	RET	
+
+
+;**************************** _skipToken ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  139	
+;  140	char* skipHex() {
+_skipHex:
+	LD	HL,-1
+	CALL	__frameset
+;  141		uint8_t i;
+;  142		while (true){
+L_95:
+;  143			for (i = 0; *parse != hexTable[i] && hexTable[i] != '\0'; i++);
+	LD	(IX+-1),0
+	JR	L_89
+L_87:
+	INC	(IX+-1)
+L_89:
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(_parse)
+	CP	A,(HL)
+	JR	Z,L_91
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	ADD	HL,BC
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_87
+L_91:
+;  144			if (hexTable[i] == '\0') return parse;
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	ADD	HL,BC
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_93
+	LD	HL,(_parse)
+	JR	L_96
+L_93:
+;  145			parse++;
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+	JR	L_95
+;  146		}
+;  147	}
+L_96:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _skipHex ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+;_hexTable                           IMPORT  unknown variable
+;i                                     IX-1      1   variable
+
+
+; Stack Frame Size: 7 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  148	
+;  149	bool isAddr() {
+_isAddr:
+	LD	HL,-1
+	CALL	__frameset
+;  150		uint8_t i;
+;  151		for (i = 0; *parse != hexTable[i] && hexTable[i] != '\0'; i++);
+	LD	(IX+-1),0
+	JR	L_101
+L_99:
+	INC	(IX+-1)
+L_101:
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(_parse)
+	CP	A,(HL)
+	JR	Z,L_102
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	ADD	HL,BC
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_99
+L_102:
+;  152		return (hexTable[i] != '\0');
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	ADD	HL,BC
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L__62
+	LD	A,1
+	JR	L__63
+L__62:
+	XOR	A,A
+L__63:
+;  153	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _isAddr ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+;_hexTable                           IMPORT  unknown variable
+;i                                     IX-1      1   variable
+
+
+; Stack Frame Size: 7 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  154	
+;  155	bool funcCmp(const char s1, const char s2){
+_funcCmp:
+	CALL	__frameset0
+;  156		if (s1 == s2) return true;
+	LD	A,(IX+6)
+	CP	A,(IX+9)
+	JR	NZ,L_105
+	LD	A,1
+	JR	L_106
+L_105:
+;  157		return false;
+	XOR	A,A
+;  158	}
+L_106:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _funcCmp ***************************
+;Name                         Addr/Register   Size   Type
+;s2                                    IX+9      1   parameter
+;s1                                    IX+6      1   parameter
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  159	
+;  160	ADDRSIZE strToHEX() {
+_strToHEX:
+	LD	HL,-4
+	CALL	__frameset
+;  161		uint8_t i;
+;  162		ADDRSIZE val = 0;
+;  163		val = strtoul(parse, NULL, 16);
+	LD	BC,16
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	LD	BC,(_parse)
+	PUSH	BC
+	CALL	_strtoul
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	(IX+-4),HL
+	LD	(IX+-1),E
+;  164		return val;
+	LD	HL,(IX+-4)
+	LD	E,(IX+-1)
+;  165	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _strToHEX ***************************
+;Name                         Addr/Register   Size   Type
+;_parse                              IMPORT      3   variable
+;_strtoul                            IMPORT  -----   function
+;val                                   IX-4      4   variable
+
+
+; Stack Frame Size: 10 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  166	
+;  167	enum errList throw(enum errList index){
+_throw:
+	CALL	__frameset0
+;  168		if (index == errNONE) return errNONE;
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	JR	NZ,L_110
+	OR	A,A
+	SBC	HL,HL
+	JR	L_112
+;  169		else if (index == errDOEXIT) return errDOEXIT;
+L_110:
+	LD	BC,8
+	LD	HL,(IX+6)
+	OR	A,A
+	SBC	HL,BC
+	JR	NZ,L_111
+	LD	HL,8
+	JR	L_112
+L_111:
+;  170		vprintf("\n%s\n", errors[index]);
+	LD	HL,(IX+6)
+	LD	BC,HL
+	ADD	HL,HL
+	ADD	HL,BC
+	LD	BC,_errors
+	ADD	HL,BC
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,L__70
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+	POP	BC
+	OR	A,A
+;  171		return errNONE;
+	SBC	HL,HL
+;  172	}
+L_112:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _throw ***************************
+;Name                         Addr/Register   Size   Type
+;_errors                             IMPORT  unknown variable
+;_vprintf                            IMPORT  -----   function
+;index                                 IX+6      3   parameter
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__70:
+	DB	10
+	DB	"%s"
+	DB	10,0
+	SEGMENT CODE
+;  173	
+;  174	void evalScript() {
+_evalScript:
+;  175	
+;  176	
+;  177	}
+	RET	
+
+
+;**************************** _evalScript ***************************
+;Name                         Addr/Register   Size   Type
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  178	
+;  179	uint32_t *getMonVar(char var) {
+_getMonVar:
+	CALL	__frameset0
+;  180		if (islower(var)){
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	PUSH	HL
+	CALL	_islower
+	POP	BC
+	CALL	__icmpzero
+	JR	Z,L_115
+;  181			return &mon_vars[ (var - 0x60) ];
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	LD	IY,HL
+	LEA	HL,IY+-96
+	ADD	HL,HL
+	ADD	HL,HL
+	LD	BC,_mon_vars
+	ADD	HL,BC
+	JR	L_116
+;  182		} else {
+L_115:
+	OR	A,A
+;  183			return 0x00000000;
+	SBC	HL,HL
+;  184		}
+;  185	}
+L_116:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _getMonVar ***************************
+;Name                         Addr/Register   Size   Type
+;_mon_vars                           STATIC     24   variable
+;_islower                            IMPORT  -----   function
+;var                                   IX+6      1   parameter
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  186	
+;  187	void setMonVar(char var, uint32_t val){
+_setMonVar:
+	CALL	__frameset0
+;  188		if (isascii(var) && islower(var)){
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	PUSH	HL
+	CALL	_isascii
+	POP	BC
+	CALL	__icmpzero
+	JR	Z,L_120
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	PUSH	HL
+	CALL	_islower
+	POP	BC
+	CALL	__icmpzero
+	JR	Z,L_120
+;  189			mon_vars[ var & 0x00011111 ] = val;
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	LD	DE,(IX+9)
+	LD	A,(IX+12)
+	LD	BC,69905
+	CALL	__iand
+	ADD	HL,HL
+	ADD	HL,HL
+	LD	BC,_mon_vars
+	ADD	HL,BC
+	LD	(HL),DE
+	INC	HL
+	INC	HL
+	INC	HL
+	LD	(HL),A
+;  190		} else {
+;  191			return;
+;  192		}
+;  193	}
+L_120:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _setMonVar ***************************
+;Name                         Addr/Register   Size   Type
+;_mon_vars                           STATIC     24   variable
+;_islower                            IMPORT  -----   function
+;_isascii                            IMPORT  -----   function
+;val                                   IX+9      4   parameter
+;var                                   IX+6      1   parameter
+
+
+; Stack Frame Size: 15 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  194	
+;  195	bool getRange(void **lower, void **upper){
+_getRange:
+	LD	HL,-1
+	CALL	__frameset
+;  196		skipBlank();
+	CALL	_skipBlank
+;  197		if (isAddr()){
+	CALL	_isAddr
+	OR	A,A
+	JR	Z,L_127
+;  198			*(ADDRSIZE*)lower = strToHEX();
+	CALL	_strToHEX
+	LD	IY,(IX+6)
+	LD	(IY),HL
+	LD	(IY+3),E
+;  199		} else if (isVar()){
+	JR	L_142
+L_127:
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_125
+;  200			*lower = getMonVar(*parse);
+	LD	HL,(_parse)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	LD	IY,(IX+6)
+	LD	(IY),HL
+;  201		} else if (*parse == '.' || *parse == ','){
+	JR	L_142
+L_125:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,46
+	SBC	HL,BC
+	JR	Z,L_122
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,44
+	SBC	HL,BC
+	JR	NZ,L_123
+L_122:
+;  202			*lower = current_addr;
+	LD	HL,(IX+6)
+	LD	BC,(_current_addr)
+	LD	(HL),BC
+;  203		} else {
+	JR	L_142
+L_123:
+;  204			return false;
+	XOR	A,A
+	JR	L_144
+;  205		}
+L_142:
+;  206		if (isCurrentVar == false && (*parse == '.' || *parse == ',')){
+	LD	A,(_isCurrentVar)
+	OR	A,A
+	JR	NZ,L_141
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,46
+	SBC	HL,BC
+	JR	Z,L_140
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,44
+	SBC	HL,BC
+	JR	NZ,L_141
+L_140:
+;  207			char tmp = *parse;
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	(IX+-1),A
+;  208			parse++;
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+;  209			skipBlank();
+	CALL	_skipBlank
+;  210			ifEOI(errNOARGS);
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_132
+	LD	A,3
+	JR	L_144
+L_132:
+;  211			if (!isAddr()) return errSYNTAX;
+	CALL	_isAddr
+	OR	A,A
+	JR	NZ,L_136
+	LD	A,1
+	JR	L_144
+L_136:
+;  212			if (tmp == '.')
+	LD	A,(IX+-1)
+	CP	A,46
+	JR	NZ,L_135
+;  213				*(ADDRSIZE*)upper = strToHEX();
+	CALL	_strToHEX
+	LD	IY,(IX+9)
+	LD	(IY),HL
+	LD	(IY+3),E
+;  214			else
+	JR	L_143
+L_135:
+;  215				*(ADDRSIZE*)upper = (strToHEX() + (uint32_t)*lower);
+	CALL	_strToHEX
+	LD	IY,(IX+6)
+	LD	BC,(IY)
+	XOR	A,A
+	CALL	__ladd
+	LD	IY,(IX+9)
+	LD	(IY),HL
+	LD	(IY+3),E
+;  216		} else {
+	JR	L_143
+L_141:
+;  217			if (*parse != ' ' || *parse != '\0'){
+	LD	HL,(_parse)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	JR	NZ,L_138
+	LD	HL,(_parse)
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_139
+L_138:
+;  218				skipToken();
+	CALL	_skipToken
+;  219			}
+L_139:
+;  220			*upper = NULL;
+	LD	HL,(IX+9)
+	LD	BC,0
+	LD	(HL),BC
+;  221		}
+L_143:
+;  222		return true;
+	LD	A,1
+;  223	}
+L_144:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _getRange ***************************
+;Name                         Addr/Register   Size   Type
+;_skipToken                          IMPORT  -----   function
+;_isCurrentVar                       STATIC      1   variable
+;_current_addr                       IMPORT      3   variable
+;_parse                              IMPORT      3   variable
+;_getMonVar                          IMPORT  -----   function
+;_isVar                              IMPORT  -----   function
+;_strToHEX                           IMPORT  -----   function
+;_isAddr                             IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;tmp                                   IX-1      1   variable
+;upper                                 IX+9      3   parameter
+;lower                                 IX+6      3   parameter
+
+
+; Stack Frame Size: 13 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  224	
+;  225	void printHex(char num){
+_printHex:
+	CALL	__frameset0
+;  226		putchar(hexTable[(num & 0x0F)]);
+	LD	L,(IX+6)
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  227		return;
+;  228	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printHex ***************************
+;Name                         Addr/Register   Size   Type
+;_hexTable                           IMPORT  unknown variable
+;_putchar                            IMPORT  -----   function
+;num                                   IX+6      1   parameter
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  229	
+;  230	void printByte(char num){
+_printByte:
+	CALL	__frameset0
+;  231		putchar(hexTable[(num & 0xF0) >> 4]);
+	LD	A,(IX+6)
+	SEXT	HL
+	LD	L,(IX+6)
+	LD	A,4
+	CALL	__ishrs_b
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  232		putchar(hexTable[(num & 0x0F)]);
+	LD	L,(IX+6)
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  233		return;
+;  234	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printByte ***************************
+;Name                         Addr/Register   Size   Type
+;_hexTable                           IMPORT  unknown variable
+;_putchar                            IMPORT  -----   function
+;num                                   IX+6      1   parameter
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  235	
+;  236	void printWord(uint16_t num){
+_printWord:
+	CALL	__frameset0
+;  237		putchar(hexTable[(num & 0xF000) >> 12]);
+	LD	HL,(IX+6)
+	LD	A,12
+	CALL	__sshru_b
+	LD	BC,HL
+	CALL	__stoiu
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  238		putchar(hexTable[(num & 0x0F00) >> 8]);
+	LD	HL,(IX+6)
+	LD	A,8
+	CALL	__sshru_b
+	LD	BC,HL
+	CALL	__stoiu
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  239		putchar(hexTable[(num & 0x00F0) >> 4]);
+	LD	HL,(IX+6)
+	LD	A,4
+	CALL	__sshru_b
+	LD	BC,HL
+	CALL	__stoiu
+	LD	A,L
+	AND	A,15
+	UEXT	HL
+	LD	L,A
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  240		putchar(hexTable[(num & 0x000F)]);
+	LD	A,(IX+6)
+	AND	A,15
+	LD	C,A
+	LD	B,0
+	CALL	__stoiu
+	LD	BC,_hexTable
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  241		return;
+;  242	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printWord ***************************
+;Name                         Addr/Register   Size   Type
+;_hexTable                           IMPORT  unknown variable
+;_putchar                            IMPORT  -----   function
+;num                                   IX+6      2   parameter
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  243	
+;  244	void printLong(uint32_t num){
+_printLong:
+	CALL	__frameset0
+;  245		printWord((num & 0xFFFF0000) >> 16);
+	LD	BC,(IX+6)
+	LD	A,(IX+9)
+	LD	L,16
+	CALL	__lshru
+	CALL	__stoiu
+	PUSH	HL
+	CALL	_printWord
+	POP	BC
+;  246		printWord(num & 0x0000FFFF);
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printWord
+	POP	BC
+;  247		return;
+;  248	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printLong ***************************
+;Name                         Addr/Register   Size   Type
+;_printWord                          IMPORT  -----   function
+;num                                   IX+6      4   parameter
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	XREF _end_addr:ROM
+	XREF _current_addr:ROM
+	XREF _parse:ROM
+	XREF _hexTable:ROM
+	XREF _errors:ROM
+	XREF _strlen:ROM
+	XREF _isascii:ROM
+	XREF _islower:ROM
+	XREF _isalnum:ROM
+	XREF _vprintf:ROM
+	XREF _asm_ClrLCD:ROM
+	XREF _asm_HomeUp:ROM
+	XREF _asm_NewLine:ROM
+	XREF __OS:ROM
+	XREF _os_GetCSC:ROM
+	XREF _os_PutStrFull:ROM
+	XREF _os_GetCursorPos:ROM
+	XREF _os_SetCursorPos:ROM
+	XREF _strtoul:ROM
+	XREF __ladd:ROM
+	XREF __iand:ROM
+	XREF __lshru:ROM
+	XREF __stoiu:ROM
+	XREF __frameset0:ROM
+	XREF __frameset:ROM
+	XREF __setflag:ROM
+	XREF __icmpzero:ROM
+	XREF __ishrs_b:ROM
+	XREF __sshru_b:ROM
+	XDEF _printLong
+	XDEF _printWord
+	XDEF _printByte
+	XDEF _printHex
+	XDEF _getRange
+	XDEF _setMonVar
+	XDEF _getMonVar
+	XDEF _evalScript
+	XDEF _throw
+	XDEF _strToHEX
+	XDEF _funcCmp
+	XDEF _isAddr
+	XDEF _skipHex
+	XDEF _skipToken
+	XDEF _skipBlank
+	XDEF _setCurrents
+	XDEF _isArg
+	XDEF _isVar
+	XDEF _isRange
+	XDEF _print_prompt
+	XDEF _gets
+	XDEF _altToggle
+	XDEF _alphaToggle
+	XDEF _puts
+	XDEF _putchar
+	XDEF _isCurrentVar
+	XDEF _mon_vars
+	END

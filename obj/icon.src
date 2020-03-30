@@ -1,0 +1,29 @@
+	.def __program_icon
+	.def __program_description
+
+	.assume adl=1
+	segment .icon
+
+	jp __program_description_end
+	db	1
+__program_icon:
+	db	010h, 010h
+	db	0FFh, 0FFh, 0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h, 06Bh, 06Bh, 06Bh, 000h, 06Bh
+	db	0FFh, 0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh
+	db	0FFh, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh
+	db	0FFh, 0FFh, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 000h
+	db	000h, 0FFh, 0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 06Bh
+	db	06Bh, 000h, 0FFh, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 0D6h
+	db	06Bh, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 0FFh, 0D6h
+	db	0D6h, 06Bh, 000h, 000h, 06Bh, 06Bh, 000h, 000h, 0FFh, 0D6h, 000h, 0FFh, 0FFh, 0FFh, 0D6h, 0D6h
+	db	0D6h, 06Bh, 06Bh, 000h, 000h, 000h, 0FFh, 06Bh, 000h, 0FFh, 000h, 0FFh, 0FFh, 0FFh, 0D6h, 0D6h
+	db	0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 0FFh, 06Bh, 000h, 0FFh, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h
+	db	0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h
+	db	0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 0D6h, 06Bh, 000h, 0FFh, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h
+	db	0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h, 06Bh, 000h, 0FFh, 0FFh, 06Bh, 000h, 0FFh, 0FFh, 0D6h, 0D6h
+	db	06Bh, 06Bh, 000h, 000h, 000h, 06Bh, 000h, 0FFh, 0FFh, 0FFh, 06Bh, 06Bh, 000h, 0FFh, 0FFh, 0D6h
+	db	06Bh, 000h, 0FFh, 0FFh, 000h, 000h, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 06Bh, 06Bh, 000h, 0FFh, 0D6h
+	db	000h, 0FFh, 0FFh, 06Bh, 06Bh, 000h, 0FFh, 0FFh, 0D6h, 0D6h, 0D6h, 0D6h, 06Bh, 000h, 06Bh, 0D6h
+__program_description:
+	db	"The Generic Shell. (C) 2020 NotArtyom", 0
+__program_description_end:

@@ -1,0 +1,1539 @@
+; Zilog eZ80 ANSI C Compiler Release 3.4
+; -optsize -noreduceopt -nomodsect -peephole -globalopt
+; -localcse -const=ROM 
+	FILE	"SRC\PRINTF.C"
+	.assume ADL=1
+	SEGMENT CODE
+;    1	//---------------------------------------------------
+;    2	//
+;    3	//	GBoot v0.0
+;    4	//	NotArtyom
+;    5	//	02/11/18
+;    6	//
+;    7	//---------------------------------------------------
+;    8	
+;    9		#include <stdbool.h>
+;   10		#include <stddef.h>
+;   11		#include <stdint.h>
+;   12		#include <stdio.h>
+;   13	
+;   14		#include <assert.h>
+;   15		#include <debug.h>
+;   16		#include <tice.h>
+;   17		#include <keypadc.h>
+;   18	
+;   19		#include "gshell.h"
+;   20	
+;   21	//---------------------------------------------------
+;   22	//
+;   23	//	GBoot v0.0
+;   24	//	NotArtyom
+;   25	//	02/11/18
+;   26	//
+;   27	//---------------------------------------------------
+;   28	
+;   29	/*
+;   30		Copyright 2001, 2002 Georges Menie (http://www.menie.org)
+;   31	
+;   32	    This program is free software; you can redistribute it and/or modify
+;   33	    it under the terms of the GNU Lesser General Public License as published by
+;   34	    the Free Software Foundation; either version 2 of the License, or
+;   35	    (at your option) any later version.
+;   36	
+;   37	    This program is distributed in the hope that it will be useful,
+;   38	    but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   39	    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   40	    GNU Lesser General Public License for more details.
+;   41	
+;   42	    You should have received a copy of the GNU Lesser General Public License
+;   43	    along with this program; if not, write to the Free Software
+;   44	    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+;   45	*/
+;   46	
+;   47	// crude divide and modulo function here
+;   48	
+;   49	// integer modulo v with d
+;   50	int mydiv(int value, int divisor)
+;   51	{
+_mydiv:
+	LD	HL,-15
+	CALL	__frameset
+;   52		int quotient=0;
+	LD	BC,0
+	LD	(IX+-9),BC
+;   53		int remainder=0;
+	LD	(IX+-3),BC
+;   54		int bitcount;
+;   55		int value_sign=1;
+	LD	BC,1
+	LD	(IX+-12),BC
+;   56		int divisor_sign=1;
+	LD	(IX+-15),BC
+;   57	
+;   58		if (value<0)
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_2
+;   59		{
+;   60			value = -value;
+	LD	HL,(IX+6)
+	CALL	__ineg
+	LD	(IX+6),HL
+;   61			value_sign=-1;
+	LD	BC,16777215
+	LD	(IX+-12),BC
+;   62		}
+L_2:
+;   63	
+;   64		if (divisor<0)
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_4
+;   65		{
+;   66			divisor=-divisor;
+	LD	HL,(IX+9)
+	CALL	__ineg
+	LD	(IX+9),HL
+;   67			divisor_sign=-1;
+	LD	BC,16777215
+	LD	(IX+-15),BC
+;   68		}
+L_4:
+;   69	
+;   70		if (divisor == 0) return 0xffffffff;
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	JR	NZ,L_12
+	LD	HL,16777215
+	JR	L_14
+L_12:
+;   71	
+;   72		for (bitcount = 31; bitcount>=0; bitcount--)
+	LD	BC,31
+	LD	(IX+-6),BC
+	JR	L_11
+L_9:
+;   73		{
+;   74			remainder <<= 1;
+	LD	HL,(IX+-3)
+	ADD	HL,HL
+	LD	(IX+-3),HL
+;   75	
+;   76	  		if (value & (1<<bitcount)) remainder|=1;
+	LD	HL,1
+	LD	BC,(IX+-6)
+	CALL	__ishl
+	LD	BC,(IX+6)
+	CALL	__iand
+	CALL	__icmpzero
+	JR	Z,L_8
+	LD	BC,1
+	LD	HL,(IX+-3)
+	CALL	__ior
+	LD	(IX+-3),HL
+L_8:
+;   77	
+;   78			if (remainder >= divisor)
+	LD	BC,(IX+9)
+	LD	HL,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_10
+;   79			{
+;   80	    			remainder -= divisor;
+	LD	BC,(IX+9)
+	LD	HL,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	LD	(IX+-3),HL
+;   81				quotient |= (1<<bitcount);
+	LD	HL,1
+	LD	BC,(IX+-6)
+	CALL	__ishl
+	LD	BC,(IX+-9)
+	CALL	__ior
+	LD	(IX+-9),HL
+;   82			}
+;   83		}
+L_10:
+	LD	BC,(IX+-6)
+	DEC	BC
+	LD	(IX+-6),BC
+L_11:
+	LD	HL,(IX+-6)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_9
+;   84		return (quotient * value_sign * divisor_sign);
+	LD	HL,(IX+-9)
+	LD	BC,(IX+-12)
+	CALL	__imuls
+	LD	BC,(IX+-15)
+	CALL	__imuls
+;   85	}
+L_14:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _mydiv ***************************
+;Name                         Addr/Register   Size   Type
+;divisor_sign                         IX-15      3   variable
+;value_sign                           IX-12      3   variable
+;quotient                              IX-9      3   variable
+;bitcount                              IX-6      3   variable
+;remainder                             IX-3      3   variable
+;divisor                               IX+9      3   parameter
+;value                                 IX+6      3   parameter
+
+
+; Stack Frame Size: 27 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;   86	
+;   87	// integer modulo
+;   88	int mymod(int value, int divisor)
+;   89	{
+_mymod:
+	LD	HL,-12
+	CALL	__frameset
+;   90		int quotient=0;
+	LD	BC,0
+	LD	(IX+-9),BC
+;   91		int remainder=0;
+	LD	(IX+-3),BC
+;   92		int bitcount;
+;   93		int value_sign=1;
+	LD	BC,1
+	LD	(IX+-12),BC
+;   94		int divisor_sign=1;
+;   95	
+;   96		if (value<0)
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_17
+;   97		{
+;   98			value = -value;
+	LD	HL,(IX+6)
+	CALL	__ineg
+	LD	(IX+6),HL
+;   99			value_sign=-1;
+	LD	BC,16777215
+	LD	(IX+-12),BC
+;  100		}
+L_17:
+;  101	
+;  102		if (divisor<0)
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_19
+;  103		{
+;  104			divisor=-divisor;
+	LD	HL,(IX+9)
+	CALL	__ineg
+	LD	(IX+9),HL
+;  105			divisor_sign=-1;
+;  106		}
+L_19:
+;  107	
+;  108		if (divisor == 0) return 0xffffffff;
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	JR	NZ,L_27
+	LD	HL,16777215
+	JR	L_29
+L_27:
+;  109	
+;  110		for (bitcount = 31; bitcount>=0; bitcount--)
+	LD	BC,31
+	LD	(IX+-6),BC
+	JR	L_26
+L_24:
+;  111		{
+;  112			remainder <<= 1;
+	LD	HL,(IX+-3)
+	ADD	HL,HL
+	LD	(IX+-3),HL
+;  113	
+;  114	  		if (value & (1<<bitcount)) remainder|=1;
+	LD	HL,1
+	LD	BC,(IX+-6)
+	CALL	__ishl
+	LD	BC,(IX+6)
+	CALL	__iand
+	CALL	__icmpzero
+	JR	Z,L_23
+	LD	BC,1
+	LD	HL,(IX+-3)
+	CALL	__ior
+	LD	(IX+-3),HL
+L_23:
+;  115	
+;  116			if (remainder >= divisor)
+	LD	BC,(IX+9)
+	LD	HL,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_25
+;  117			{
+;  118	    			remainder -= divisor;
+	LD	BC,(IX+9)
+	LD	HL,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	LD	(IX+-3),HL
+;  119				quotient |= (1<<bitcount);
+	LD	HL,1
+	LD	BC,(IX+-6)
+	CALL	__ishl
+	LD	BC,(IX+-9)
+	CALL	__ior
+	LD	(IX+-9),HL
+;  120			}
+;  121		}
+L_25:
+	LD	BC,(IX+-6)
+	DEC	BC
+	LD	(IX+-6),BC
+L_26:
+	LD	HL,(IX+-6)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_24
+;  122		// ignore divisor sign on mod function (according to gcc)
+;  123		return (remainder * value_sign);
+	LD	HL,(IX+-3)
+	LD	BC,(IX+-12)
+	CALL	__imuls
+;  124	}
+L_29:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _mymod ***************************
+;Name                         Addr/Register   Size   Type
+;value_sign                           IX-12      3   variable
+;quotient                              IX-9      3   variable
+;bitcount                              IX-6      3   variable
+;remainder                             IX-3      3   variable
+;divisor                               IX+9      3   parameter
+;value                                 IX+6      3   parameter
+
+
+; Stack Frame Size: 24 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  125	
+;  126	
+;  127	static void printchar(char **str, int c)
+;  128	{
+_printchar:
+	CALL	__frameset0
+;  129		extern int putchar(int c);
+;  130		if (str) {
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	JR	Z,L_31
+;  131			**str = c;
+	LD	HL,(IX+6)
+	LD	HL,(HL)
+	LD	A,(IX+9)
+	LD	(HL),A
+;  132			++(*str);
+	LD	HL,(IX+6)
+	LD	BC,(HL)
+	INC	BC
+	LD	HL,(IX+6)
+	LD	(HL),BC
+;  133		}
+;  134		else (void)putchar(c);
+	JR	L_32
+L_31:
+	LD	BC,(IX+9)
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;  135	}
+L_32:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printchar ***************************
+;Name                         Addr/Register   Size   Type
+;_putchar                            IMPORT  -----   function
+;c                                     IX+9      3   parameter
+;str                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  136	
+;  137	#define PAD_RIGHT 1
+;  138	#define PAD_ZERO 2
+;  139	
+;  140	static int prints(char **out, const char *string, int width, int pad, int maxlen)
+;  141	{
+_prints:
+	LD	HL,-12
+	CALL	__frameset
+;  142		register int pc = 0, padchar = ' ';
+	LD	BC,0
+	LD	(IX+-3),BC
+	LD	BC,32
+	LD	(IX+-12),BC
+;  143	
+;  144		if (width > 0) {
+	LD	BC,(IX+12)
+	OR	A,A
+	SBC	HL,HL
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	P,L_46
+;  145			register int len = 0;
+	LD	BC,0
+	LD	(IX+-6),BC
+;  146			register const char *ptr;
+;  147			for (ptr = string; *ptr; ++ptr) ++len;
+	LD	BC,(IX+9)
+	LD	(IX+-9),BC
+	JR	L_35
+L_33:
+	LD	BC,(IX+-6)
+	INC	BC
+	LD	(IX+-6),BC
+	LD	BC,(IX+-9)
+	INC	BC
+	LD	(IX+-9),BC
+L_35:
+	LD	HL,(IX+-9)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_33
+;  148			if (len >= width) width = 0;
+	LD	BC,(IX+12)
+	LD	HL,(IX+-6)
+	OR	A,A
+	SBC	HL,BC
+	JP	M,L_37
+	LD	BC,0
+	LD	(IX+12),BC
+;  149			else width -= len;
+	JR	L_40
+L_37:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+12)
+	OR	A,A
+	SBC	HL,BC
+	LD	(IX+12),HL
+L_40:
+;  150			if (pad & PAD_ZERO) padchar = '0';
+	LD	A,(IX+15)
+	AND	A,2
+	UEXT	HL
+	LD	L,A
+	CALL	__icmpzero
+	JR	Z,L_46
+	LD	BC,48
+	LD	(IX+-12),BC
+;  151		}
+L_46:
+;  152		if (!(pad & PAD_RIGHT)) {
+	LD	A,(IX+15)
+	AND	A,1
+	UEXT	HL
+	LD	L,A
+	CALL	__icmpzero
+	JR	NZ,L_56
+;  153			for ( ; width > 0; --width) {
+	JR	L_44
+L_42:
+;  154				printchar (out, padchar);
+	LD	BC,(IX+-12)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  155				++pc;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+	LD	BC,(IX+12)
+	DEC	BC
+	LD	(IX+12),BC
+;  156			}
+L_44:
+	LD	BC,(IX+12)
+	OR	A,A
+	SBC	HL,HL
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_42
+;  157		}
+L_56:
+;  158		if (maxlen == 0) {
+	LD	HL,(IX+18)
+	CALL	__icmpzero
+	JR	Z,L_49
+	JR	L_53
+;  159			for ( ; *string ; ++string) {
+L_47:
+;  160				printchar (out, *string);
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  161				++pc;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  162			}
+L_49:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_47
+	JR	L_59
+;  163		} else {
+;  164			for ( ; *string && maxlen > 0; ++string) {
+L_51:
+;  165				printchar (out, *string);
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  166				--maxlen;
+	LD	BC,(IX+18)
+	DEC	BC
+	LD	(IX+18),BC
+;  167				++pc;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  168			}
+L_53:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_59
+	LD	BC,(IX+18)
+	OR	A,A
+	SBC	HL,HL
+	OR	A,A
+	SBC	HL,BC
+	JP	M,L_51
+;  169		}
+;  170		for ( ; width > 0; --width) {
+	JR	L_59
+L_57:
+;  171			printchar (out, padchar);
+	LD	BC,(IX+-12)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  172			++pc;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+	LD	BC,(IX+12)
+	DEC	BC
+	LD	(IX+12),BC
+;  173		}
+L_59:
+	LD	BC,(IX+12)
+	OR	A,A
+	SBC	HL,HL
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_57
+;  174	
+;  175		return pc;
+	LD	HL,(IX+-3)
+;  176	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _prints ***************************
+;Name                         Addr/Register   Size   Type
+;padchar                              IX-12      3   variable
+;ptr                                   IX-9      3   variable
+;len                                   IX-6      3   variable
+;pc                                    IX-3      3   variable
+;maxlen                               IX+18      3   parameter
+;pad                                  IX+15      3   parameter
+;width                                IX+12      3   parameter
+;string                                IX+9      3   parameter
+;out                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 33 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  177	
+;  178	/* the following should be enough for 32 bit int */
+;  179	#define PRINT_BUF_LEN 32
+;  180	
+;  181	static int printi(char **out, int i, int b, int sg, int width, int pad, int letbase)
+;  182	{
+_printi:
+	LD	HL,-47
+	CALL	__frameset
+;  183		char print_buf[PRINT_BUF_LEN];
+;  184		register char *s;
+;  185		register int t, neg = 0, pc = 0;
+	LD	BC,0
+	LD	(IX+-12),BC
+	LD	(IX+-15),BC
+;  186		register unsigned int u = i;
+	LD	BC,(IX+9)
+	LD	(IX+-6),BC
+;  187	
+;  188		if (i == 0) {
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	JR	NZ,L_67
+;  189			print_buf[0] = '0';
+	LD	(IX+-47),48
+;  190			print_buf[1] = '\0';
+	LEA	HL,IX+-47
+	INC	HL
+;  191			return prints (out, print_buf, width, pad, 0);
+	LD	BC,0
+	PUSH	BC
+	LD	(HL),0
+	LD	BC,(IX+21)
+	PUSH	BC
+	LD	BC,(IX+18)
+	PUSH	BC
+	PEA	IX+-47
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_prints
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	JR	L_79
+;  192		}
+L_67:
+;  193	
+;  194		if (sg && b == 10 && i < 0) {
+	LD	HL,(IX+15)
+	CALL	__icmpzero
+	JR	Z,L_68
+	LD	BC,10
+	LD	HL,(IX+12)
+	OR	A,A
+	SBC	HL,BC
+	JR	NZ,L_68
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	CALL	__setflag
+	JP	P,L_68
+;  195			neg = 1;
+	LD	BC,1
+	LD	(IX+-12),BC
+;  196			u = -i;
+	LD	HL,(IX+9)
+	CALL	__ineg
+	LD	(IX+-6),HL
+;  197		}
+L_68:
+;  198	
+;  199		s = print_buf + PRINT_BUF_LEN-1;
+	LEA	BC,IX+-15
+	DEC	BC
+	LD	(IX+-3),BC
+;  200		*s = '\0';
+	LD	HL,BC
+	LD	(HL),0
+;  201	
+;  202		while (u) {
+	JR	L_71
+L_72:
+;  203			t = mymod(u,b);
+	LD	BC,(IX+12)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	CALL	_mymod
+	POP	BC
+	POP	BC
+	LD	(IX+-9),HL
+;  204			if( t >= 10 )
+	LD	BC,10
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_70
+;  205				t += letbase - '0' - 10;
+	LD	IY,(IX+24)
+	LEA	HL,IY+-58
+	LD	BC,(IX+-9)
+	ADD	HL,BC
+	LD	(IX+-9),HL
+L_70:
+;  206			*--s = t + '0';
+	LD	IY,(IX+-3)
+	LEA	IY,IY+-1
+	LD	(IX+-3),IY
+	LD	A,(IX+-9)
+	ADD	A,48
+	LD	HL,(IX+-3)
+	LD	(HL),A
+;  207			// u /= b
+;  208			u = mydiv(u,b);
+	LD	BC,(IX+12)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	CALL	_mydiv
+	POP	BC
+	POP	BC
+	LD	(IX+-6),HL
+;  209		}
+L_71:
+	LD	HL,(IX+-6)
+	CALL	__icmpzero
+	JR	NZ,L_72
+;  210	
+;  211		if (neg) {
+	LD	HL,(IX+-12)
+	CALL	__icmpzero
+	JR	Z,L_78
+;  212			if( width && (pad & PAD_ZERO) ) {
+	LD	HL,(IX+18)
+	CALL	__icmpzero
+	JR	Z,L_75
+	LD	A,(IX+21)
+	AND	A,2
+	UEXT	HL
+	LD	L,A
+	CALL	__icmpzero
+	JR	Z,L_75
+;  213				printchar (out, '-');
+	LD	BC,45
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  214				++pc;
+	LD	BC,1
+	LD	(IX+-15),BC
+;  215				--width;
+	LD	BC,(IX+18)
+	DEC	BC
+	LD	(IX+18),BC
+;  216			}
+;  217			else {
+	JR	L_78
+L_75:
+;  218				*--s = '-';
+	LD	IY,(IX+-3)
+	LEA	IY,IY+-1
+	LD	(IX+-3),IY
+	LD	HL,(IX+-3)
+	LD	(HL),45
+;  219			}
+;  220		}
+L_78:
+;  221	
+;  222		return pc + prints (out, s, width, pad, 0);
+	LD	BC,0
+	PUSH	BC
+	LD	BC,(IX+21)
+	PUSH	BC
+	LD	BC,(IX+18)
+	PUSH	BC
+	LD	BC,(IX+-3)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_prints
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-15)
+	ADD	HL,BC
+;  223	}
+L_79:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _printi ***************************
+;Name                         Addr/Register   Size   Type
+;print_buf                            IX-47     32   variable
+;pc                                   IX-15      3   variable
+;neg                                  IX-12      3   variable
+;t                                     IX-9      3   variable
+;u                                     IX-6      3   variable
+;s                                     IX-3      3   variable
+;letbase                              IX+24      3   parameter
+;pad                                  IX+21      3   parameter
+;width                                IX+18      3   parameter
+;sg                                   IX+15      3   parameter
+;b                                    IX+12      3   parameter
+;i                                     IX+9      3   parameter
+;out                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 74 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  224	
+;  225	static int print(char **out, char *format, va_list varg)
+;  226	{
+_print:
+	LD	HL,-20
+	CALL	__frameset
+;  227		int width, pad, len = 0;
+	LD	BC,0
+	LD	(IX+-12),BC
+;  228		register int pc = 0;
+	LD	(IX+-3),BC
+;  229	
+;  230		char scr[2];
+;  231	
+;  232		for (; *format != 0; ++format) {
+	JR	L_124
+L_122:
+;  233			if (*format == '%') {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,37
+	SBC	HL,BC
+	JR	NZ,L_81
+;  234				++format;
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  235				width = pad = 0;
+	LD	BC,0
+	LD	(IX+-9),BC
+	LD	(IX+-6),BC
+;  236				if (*format == '\0') break;
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_126
+;  237				if (*format == '%') goto out;
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,37
+	SBC	HL,BC
+	JR	Z,L_81
+;  238				if (*format == '-') {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,45
+	SBC	HL,BC
+	JR	NZ,L_86
+;  239					++format;
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  240					pad = PAD_RIGHT;
+	LD	BC,1
+	LD	(IX+-9),BC
+;  241				}
+;  242	
+;  243				while (*format == '0') {
+	JR	L_86
+L_87:
+;  244					++format;
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  245					pad |= PAD_ZERO;
+	LD	HL,(IX+-9)
+	LD	BC,2
+	CALL	__ior
+	LD	(IX+-9),HL
+;  246				}
+L_86:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,48
+	SBC	HL,BC
+	JR	Z,L_87
+;  247				for ( ; *format >= '0' && *format <= '9'; ++format) {
+	JR	L_92
+L_90:
+;  248					width *= 10;
+	LD	HL,(IX+-6)
+	LD	A,10
+	CALL	__imul_b
+	LD	(IX+-6),HL
+;  249					width += *format - '0';
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	LD	IY,HL
+	LEA	HL,IY+-48
+	LD	BC,(IX+-6)
+	ADD	HL,BC
+	LD	(IX+-6),HL
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  250				}
+L_92:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,48
+	SBC	HL,BC
+	JP	M,L_101
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	LD	BC,HL
+	LD	HL,57
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	P,L_90
+L_101:
+;  251				if (*format == '.') {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,46
+	SBC	HL,BC
+	JR	NZ,L_107
+;  252					++format;
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  253					if (*format == '*') {
+	LD	HL,BC
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,42
+	SBC	HL,BC
+	JR	NZ,L_97
+;  254						++format;
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  255						len = va_arg(varg, int);
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	LD	(IX+-12),BC
+;  256					} else {
+	JR	L_107
+;  257						for ( ; *format >= '0' && *format <= '9'; ++format) {
+L_95:
+;  258							len *= 10;
+	LD	HL,(IX+-12)
+	LD	A,10
+	CALL	__imul_b
+	LD	(IX+-12),HL
+;  259							len += *format - '0';
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	LD	IY,HL
+	LEA	HL,IY+-48
+	LD	BC,(IX+-12)
+	ADD	HL,BC
+	LD	(IX+-12),HL
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+;  260						}
+L_97:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,48
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_107
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	LD	BC,HL
+	LD	HL,57
+	OR	A,A
+	SBC	HL,BC
+	CALL	__setflag
+	JP	P,L_95
+;  261					}
+;  262				}
+L_107:
+;  263				if( *format == 's' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,115
+	SBC	HL,BC
+	JR	NZ,L_109
+;  264					register char *s = va_arg(varg, char*);
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	LD	(IX+-20),BC
+;  265					pc += prints (out, s?s:"(null)", width, pad, len);
+	LD	HL,BC
+	CALL	__icmpzero
+	JR	Z,L_104
+	LD	BC,(IX+-20)
+	LD	(IX+-17),BC
+	JR	L_105
+L_104:
+	LD	BC,L__51
+	LD	(IX+-17),BC
+L_105:
+	LD	BC,(IX+-12)
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,(IX+-17)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_prints
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  266					continue;
+	JR	L_123
+;  267				}
+L_109:
+;  268				if( *format == 'd' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,100
+	SBC	HL,BC
+	JR	NZ,L_111
+;  269					pc += printi (out, va_arg(varg, int), 10, 1, width, pad, 'a');
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	BC,97
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,1
+	PUSH	BC
+	LD	BC,10
+	PUSH	BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printi
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  270					continue;
+	JR	L_123
+;  271				}
+L_111:
+;  272				if( *format == 'b' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,98
+	SBC	HL,BC
+	JR	NZ,L_113
+;  273					pc += printi (out, va_arg(varg, int), 2, 1, width, pad, 'a');
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	BC,97
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,1
+	PUSH	BC
+	LD	BC,2
+	PUSH	BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printi
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  274					continue;
+	JR	L_123
+;  275				}
+L_113:
+;  276				if( *format == 'x' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,120
+	SBC	HL,BC
+	JR	NZ,L_115
+;  277					pc += printi (out, va_arg(varg, int), 16, 0, width, pad, 'a');
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	BC,97
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	LD	BC,16
+	PUSH	BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printi
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  278					continue;
+	JR	L_123
+;  279				}
+L_115:
+;  280				if( *format == 'X' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,88
+	SBC	HL,BC
+	JR	NZ,L_117
+;  281					pc += printi (out, va_arg(varg, int), 16, 0, width, pad, 'A');
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	BC,65
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	LD	BC,16
+	PUSH	BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printi
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  282					continue;
+	JR	L_123
+;  283				}
+L_117:
+;  284				if( *format == 'u' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,117
+	SBC	HL,BC
+	JR	NZ,L_119
+;  285					pc += printi (out, va_arg(varg, int), 10, 0, width, pad, 'a');
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	BC,97
+	PUSH	BC
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	LD	BC,10
+	PUSH	BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	BC,(HL)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printi
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  286					continue;
+	JR	L_123
+;  287				}
+L_119:
+;  288				if( *format == 'c' ) {
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,99
+	SBC	HL,BC
+	JR	NZ,L_123
+;  289					/* char are converted to int then pushed on the stack */
+;  290					scr[0] = va_arg(varg, char);
+	LD	IY,(IX+12)
+	LEA	BC,IY+3
+	LD	(IX+12),BC
+	LD	IY,(IX+12)
+	LEA	HL,IY+-3
+	LD	A,(HL)
+;  291					scr[1] = '\0';
+	LEA	HL,IX+-14
+	INC	HL
+	LD	(IX+-14),A
+;  292					pc += prints (out, scr, width, pad, 0);
+	LD	BC,0
+	PUSH	BC
+	LD	(HL),0
+	LD	BC,(IX+-9)
+	PUSH	BC
+	LD	BC,(IX+-6)
+	PUSH	BC
+	PEA	IX+-14
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_prints
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	BC,(IX+-3)
+	ADD	HL,BC
+	LD	(IX+-3),HL
+;  293					continue;
+	JR	L_123
+L_81:
+;  294				}
+;  295			}
+;  296			else {
+;  297			out:
+;  298				printchar (out, *format);
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	_printchar
+	POP	BC
+	POP	BC
+;  299				++pc;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+;  300			}
+;  301		}
+L_123:
+	LD	BC,(IX+9)
+	INC	BC
+	LD	(IX+9),BC
+L_124:
+	LD	HL,(IX+9)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_122
+L_126:
+;  302		if (out) **out = '\0';
+	LD	HL,(IX+6)
+	CALL	__icmpzero
+	JR	Z,L_127
+	LD	HL,(IX+6)
+	LD	HL,(HL)
+	LD	(HL),0
+L_127:
+;  303		return pc;
+	LD	HL,(IX+-3)
+;  304	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _print ***************************
+;Name                         Addr/Register   Size   Type
+;s                                    IX-20      3   variable
+;temp102                              IX-17      3   variable
+;scr                                  IX-14      2   variable
+;len                                  IX-12      3   variable
+;pad                                   IX-9      3   variable
+;width                                 IX-6      3   variable
+;pc                                    IX-3      3   variable
+;varg                                 IX+12      3   parameter
+;format                                IX+9      3   parameter
+;out                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 35 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__51:
+	DB	"(null)"
+	DB	0
+	SEGMENT CODE
+;  305	
+;  306	int _bandaid_vprintf(const char *format, va_list arg) {
+__bandaid_vprintf:
+	CALL	__frameset0
+;  307		//return _bandaid_vnprintf(SIZE_MAX, format, arg);
+;  308		// TODO: this one too
+;  309		print(0, format, arg);
+	LD	BC,(IX+9)
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	CALL	_print
+	POP	BC
+	POP	BC
+	POP	BC
+;  310		return 2;
+	LD	HL,2
+;  311	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** __bandaid_vprintf ***************************
+;Name                         Addr/Register   Size   Type
+;arg                                   IX+9      3   parameter
+;format                                IX+6      3   parameter
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  312	
+;  313	int vprintf(const char *format, ...) {
+_vprintf:
+	LD	HL,-6
+	CALL	__frameset
+;  314		va_list va;
+;  315		int ret;
+;  316	    va_start(va, format);
+	LEA	IY,IX+9
+	LD	(IX+-3),IY
+;  317		ret = _bandaid_vprintf(format, va);
+	LD	BC,IY
+	PUSH	BC
+	LD	BC,(IX+6)
+	PUSH	BC
+	CALL	__bandaid_vprintf
+	POP	BC
+	POP	BC
+	LD	(IX+-6),HL
+;  318		va_end(va);
+;  319		return ret;
+;  320	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _vprintf ***************************
+;Name                         Addr/Register   Size   Type
+;ret                                   IX-6      3   variable
+;va                                    IX-3      3   variable
+;format                                IX+6      3   parameter
+
+
+; Stack Frame Size: 15 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	XREF _putchar:ROM
+	XREF __imuls:ROM
+	XREF __ineg:ROM
+	XREF __ior:ROM
+	XREF __iand:ROM
+	XREF __ishl:ROM
+	XREF __frameset0:ROM
+	XREF __frameset:ROM
+	XREF __setflag:ROM
+	XREF __icmpzero:ROM
+	XREF __imul_b:ROM
+	XDEF _vprintf
+	XDEF __bandaid_vprintf
+	XDEF _mymod
+	XDEF _mydiv
+	END

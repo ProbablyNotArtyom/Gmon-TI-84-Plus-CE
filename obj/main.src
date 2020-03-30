@@ -1,0 +1,2236 @@
+; Zilog eZ80 ANSI C Compiler Release 3.4
+; -optsize -noreduceopt -nomodsect -peephole -globalopt
+; -localcse -const=ROM 
+	FILE	"SRC\MAIN.C"
+	.assume ADL=1
+	SEGMENT TEXT
+_funcTable:
+	DW24	_gsh_help
+	DW24	_gsh_exit
+	DW24	_gsh_echo
+	DW24	_gsh_execute
+	DW24	_gsh_delay
+	DW24	_gsh_deposit
+	DW24	_gsh_view
+	DW24	_gsh_view_ascii
+	DW24	_gsh_copy
+	DW24	_gsh_move
+	DW24	_gsh_fill
+	DW24	0
+_funcKeys:
+	DB	63
+	DB	81
+	DB	94
+	DB	71
+	DB	87
+	DB	58
+	DB	82
+	DB	79
+	DB	78
+	DB	77
+	DB	88
+	DB	0
+	SEGMENT STRSECT
+L__0:
+	DB	0
+L__1:
+	DB	"Syntax error"
+	DB	0
+L__2:
+	DB	"Undefined function"
+	DB	0
+L__3:
+	DB	"Unexpected arguments"
+	DB	0
+L__4:
+	DB	"Unexpected end of input"
+	DB	0
+L__5:
+	DB	"Invalid hex"
+	DB	0
+L__6:
+	DB	"Invalid range"
+	DB	0
+L__7:
+	DB	"Break"
+	DB	0
+	SEGMENT TEXT
+_errors:
+	DW24	L__0
+	DW24	L__1
+	DW24	L__2
+	DW24	L__3
+	DW24	L__4
+	DW24	L__5
+	DW24	L__6
+	DW24	L__7
+_hexTable:
+	DB	48
+	DB	49
+	DB	50
+	DB	51
+	DB	52
+	DB	53
+	DB	54
+	DB	55
+	DB	56
+	DB	57
+	DB	65
+	DB	66
+	DB	67
+	DB	68
+	DB	69
+	DB	70
+	DB	0
+	SEGMENT STRSECT
+L__8:
+	DB	"G'Mon Version 1.2"
+	DB	0
+L__9:
+	DB	"-=-=- Commands -=-=-=-=-=-"
+	DB	0
+L__10:
+	DB	"R (<$|%>) Dump memory"
+	DB	0
+L__11:
+	DB	"N <%>, $  Copy memory"
+	DB	0
+L__12:
+	DB	"M <%>, $  Move memory"
+	DB	0
+L__13:
+	DB	"X <%>, #  Fill memory"
+	DB	0
+L__14:
+	DB	": (#)     Deposit bytes"
+	DB	0
+L__15:
+	DB	"G <$|%>   Jump to ASM"
+	DB	0
+L__16:
+	DB	"^ ...     Print formatted"
+	DB	0
+L__17:
+	DB	"W #       Delay # ms"
+	DB	0
+L__18:
+	DB	"?         Print help"
+	DB	0
+L__19:
+	DB	0,0
+	SEGMENT DATA
+_helpText:
+	DW24	L__8
+	DW24	L__9
+	DW24	L__10
+	DW24	L__11
+	DW24	L__12
+	DW24	L__13
+	DW24	L__14
+	DW24	L__15
+	DW24	L__16
+	DW24	L__17
+	DW24	L__18
+	DW24	L__19
+	SEGMENT BSS
+_doExit:
+	DS	1
+_parse:
+	DS	3
+_current_addr:
+	DS	3
+_end_addr:
+	DS	3
+_cmdStart:
+	DS	3
+_tmp:
+	DS	3
+_numCMDs:
+	DS	1
+_numLoops:
+	DS	4*1
+_inBuffer:
+	DS	255
+;    1	/*
+;    2	 *	Copyright (C) 2020  Carson Herrington
+;    3	 *
+;    4	 *	This program is free software: you can redistribute it and/or modify
+;    5	 *	it under the terms of the GNU General Public License as published by
+;    6	 *	the Free Software Foundation, either version 3 of the License, or
+;    7	 *	(at your option) any later version.
+;    8	 *
+;    9	 *	This program is distributed in the hope that it will be useful,
+;   10	 *	but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   11	 *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   12	 *	GNU General Public License for more details.
+;   13	 *
+;   14	 *	You should have received a copy of the GNU General Public License
+;   15	 *	along with this program.  If not, see <https://www.gnu.org/licenses/>.
+;   16	 */
+;   17	
+;   18		#include <stdbool.h>
+;   19		#include <stddef.h>
+;   20		#include <stdint.h>
+;   21		#include <stdio.h>
+;   22	
+;   23		#include <assert.h>
+;   24		#include <debug.h>
+;   25		#include <tice.h>
+;   26		#include <keypadc.h>
+;   27	
+;   28		#include "gshell.h"
+;   29	
+;   30	//-----------------------------------------------------------------------------
+;   31	
+;   32	bool gsh_do_cmd(uint8_t num);
+;   33	
+;   34	static enum errList gsh_help();
+;   35	static enum errList gsh_exit();
+;   36	static enum errList gsh_echo();
+;   37	static enum errList gsh_execute();
+;   38	static enum errList gsh_delay();
+;   39	static enum errList gsh_deposit();
+;   40	static enum errList gsh_view();
+;   41	static enum errList gsh_view_ascii();
+;   42	static enum errList gsh_copy();
+;   43	static enum errList gsh_move();
+;   44	static enum errList gsh_fill();
+;   45	
+;   46	static enum errList read_range(char *ptr, char *end);
+;   47	
+;   48	//-----------------------------------Tables------------------------------------
+;   49	
+;   50	enum errList const (* const funcTable[])() = {
+;   51		gsh_help,
+;   52		gsh_exit,
+;   53		gsh_echo,
+;   54		gsh_execute,
+;   55		gsh_delay,
+;   56		gsh_deposit,
+;   57		gsh_view,
+;   58		gsh_view_ascii,
+;   59		gsh_copy,
+;   60		gsh_move,
+;   61		gsh_fill,
+;   62		NULL
+;   63	};
+;   64	
+;   65	const char funcKeys[] = {
+;   66		'?',
+;   67		'Q',
+;   68		'^',
+;   69		'G',
+;   70		'W',
+;   71		':',
+;   72		'R',
+;   73		'O',
+;   74		'N',
+;   75		'M',
+;   76		'X',
+;   77		0
+;   78	};
+;   79	
+;   80	const char* const errors[] = {
+;   81		"",
+;   82		"Syntax error",
+;   83		"Undefined function",
+;   84		"Unexpected arguments",
+;   85		"Unexpected end of input",
+;   86		"Invalid hex",
+;   87		"Invalid range",
+;   88		"Break"
+;   89	};
+;   90	
+;   91	const char hexTable[] = "0123456789ABCDEF";
+;   92	const char *helpText[] = {
+;   93		"G'Mon Version " GMON_VERSION,
+;   94		"-=-=- Commands -=-=-=-=-=-",
+;   95		"R (<$|%>) Dump memory",
+;   96		"N <%>, $  Copy memory",
+;   97		"M <%>, $  Move memory",
+;   98		"X <%>, #  Fill memory",
+;   99		": (#)     Deposit bytes",
+;  100		"G <$|%>   Jump to ASM",
+;  101		"^ ...     Print formatted",
+;  102		"W #       Delay # ms",
+;  103		"?         Print help",
+;  104		"\0"
+;  105	};
+;  106	
+;  107	//-----------------------------------------------------------------------------
+;  108	
+;  109	bool doExit;
+;  110	char *parse;
+;  111	char *current_addr;
+;  112	char *end_addr;
+;  113	char *cmdStart;
+;  114	char *tmp;
+;  115	
+;  116	uint8_t numCMDs;
+;  117	uint32_t numLoops;
+;  118	char inBuffer[BUFFLEN];					// Our input buffer
+	SEGMENT CODE
+;  119	
+;  120	int main(void) {
+_main:
+;  121	    os_ClrHome();
+	LD	BC,_asm_ClrLCD
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+	LD	BC,_asm_HomeUp
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+	LD	BC,_asm_DrawStatusBar
+	PUSH	BC
+	CALL	__OS
+	POP	BC
+;  122	
+;  123		vprintf("G'Mon Version " GMON_VERSION "\n");
+	LD	BC,L__20
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  124		doExit = false;
+	XOR	A,A
+	LD	(_doExit),A
+;  125		current_addr = 0x00;
+	LD	BC,0
+	LD	(_current_addr),BC
+;  126		end_addr = 0x00;
+	LD	(_end_addr),BC
+;  127		while (doExit == false){
+	JR	L_23
+L_24:
+;  128			print_prompt();
+	CALL	_print_prompt
+;  129			parse = inBuffer;							// Set the parse pointer to the beginning of the buffer
+;  130			gets(inBuffer, BUFFLEN);					// Get user input
+	LD	BC,255
+	PUSH	BC
+	LD	BC,_inBuffer
+	PUSH	BC
+	LD	(_parse),BC
+	CALL	_gets
+	POP	BC
+	POP	BC
+;  131			skipBlank();								// Skip and leading spaces
+	CALL	_skipBlank
+;  132			if (!isEOI()){
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_22
+;  133				puts("");
+	LD	BC,L__22
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+;  134				numLoops = 1;
+	LD	BC,1
+	LD	(_numLoops),BC
+	XOR	A,A
+	LD	(_numLoops+3),A
+;  135				numCMDs = 0x01;
+	LD	A,1
+	LD	(_numCMDs),A
+;  136				skipBlank();
+	CALL	_skipBlank
+;  137				cmdStart = parse;
+	LD	BC,(_parse)
+	LD	(_cmdStart),BC
+;  138				if (*cmdStart == '{'){
+	LD	HL,(_cmdStart)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,123
+	SBC	HL,BC
+	JR	Z,L_4
+	JR	L_9
+;  139					while (*cmdStart != '}') cmdStart++;
+L_5:
+	LD	BC,(_cmdStart)
+	INC	BC
+	LD	(_cmdStart),BC
+L_4:
+	LD	HL,(_cmdStart)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,125
+	SBC	HL,BC
+	JR	NZ,L_5
+;  140					numLoops = strtoul(parse+1, NULL, 10);
+	LD	BC,10
+	PUSH	BC
+	LD	BC,0
+	PUSH	BC
+	LD	BC,(_parse)
+	INC	BC
+	PUSH	BC
+	CALL	_strtoul
+	POP	BC
+	POP	BC
+	POP	BC
+	LD	(_numLoops),HL
+	LD	A,E
+	LD	(_numLoops+3),A
+;  141					cmdStart++;
+	LD	BC,(_cmdStart)
+	INC	BC
+	LD	(_cmdStart),BC
+;  142				}
+L_9:
+;  143				parse = cmdStart;
+	LD	BC,(_cmdStart)
+	LD	(_parse),BC
+;  144				for (tmp = parse; *tmp != '\0'; tmp++) if (*tmp == ';') numCMDs += 1;
+	LD	(_tmp),BC
+	JR	L_14
+L_12:
+	LD	HL,(_tmp)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,59
+	SBC	HL,BC
+	JR	NZ,L_13
+	LD	A,(_numCMDs)
+	INC	A
+	LD	(_numCMDs),A
+L_13:
+	LD	BC,(_tmp)
+	INC	BC
+	LD	(_tmp),BC
+L_14:
+	LD	HL,(_tmp)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_12
+;  145				while (numLoops > 0){
+	JR	L_18
+L_19:
+;  146					gsh_do_cmd(numCMDs);
+	LD	A,(_numCMDs)
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	CALL	_gsh_do_cmd
+	POP	BC
+;  147					// Break if Clear is pressed
+;  148					if (os_GetCSC() == sk_Clear) {
+	CALL	_os_GetCSC
+	UEXT	HL
+	LD	L,A
+	OR	A,A
+	LD	BC,15
+	SBC	HL,BC
+	JR	NZ,L_17
+;  149						throw(errBREAK);
+	LD	BC,7
+	PUSH	BC
+	CALL	_throw
+	POP	BC
+;  150						numLoops = 0;
+	LD	BC,0
+	LD	(_numLoops),BC
+	XOR	A,A
+	LD	(_numLoops+3),A
+;  151					} else {
+	JR	L_18
+L_17:
+;  152						numLoops--;
+	LD	A,(_numLoops+3)
+	LD	E,A
+	XOR	A,A
+	LD	HL,(_numLoops)
+	LD	BC,1
+	CALL	__lsub
+	LD	(_numLoops),HL
+	LD	A,E
+	LD	(_numLoops+3),A
+;  153						parse = cmdStart;
+	LD	BC,(_cmdStart)
+	LD	(_parse),BC
+;  154					}
+;  155				}
+L_18:
+	OR	A,A
+	SBC	HL,HL
+	LD	E,0
+	LD	BC,(_numLoops)
+	LD	A,(_numLoops+3)
+	CALL	__lcmpu
+	JR	C,L_19
+	JR	L_23
+;  156			} else puts("");
+L_22:
+	LD	BC,L__29
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+;  157		}
+L_23:
+	LD	A,(_doExit)
+	OR	A,A
+	JR	Z,L_24
+	OR	A,A
+;  158	
+;  159		return 0;
+	SBC	HL,HL
+;  160	}
+	RET	
+
+
+;**************************** _main ***************************
+;Name                         Addr/Register   Size   Type
+;_throw                              IMPORT  -----   function
+;_os_GetCSC                          IMPORT  -----   function
+;_gsh_do_cmd                         IMPORT  -----   function
+;_tmp                                STATIC      3   variable
+;_strtoul                            IMPORT  -----   function
+;_cmdStart                           STATIC      3   variable
+;_numCMDs                            STATIC      1   variable
+;_numLoops                           STATIC      4   variable
+;_puts                               IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_gets                               IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;_inBuffer                           STATIC    255   variable
+;_print_prompt                       IMPORT  -----   function
+;_end_addr                           STATIC      3   variable
+;_current_addr                       STATIC      3   variable
+;_doExit                             STATIC      1   variable
+;_vprintf                            IMPORT  -----   function
+;_asm_DrawStatusBar                  IMPORT  -----   function
+;_asm_HomeUp                         IMPORT  -----   function
+;_asm_ClrLCD                         IMPORT  -----   function
+;__OS                                IMPORT  -----   function
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__20:
+	DB	"G'Mon Version 1.2"
+	DB	10,0
+L__22:
+	DB	0
+L__29:
+	DB	0
+	SEGMENT CODE
+;  161	
+;  162	bool gsh_do_cmd(uint8_t num){
+_gsh_do_cmd:
+	LD	HL,-4
+	CALL	__frameset
+;  163		uint8_t i;
+;  164		char *tmp;
+;  165		for (tmp = parse; *tmp != '\0'; tmp++)
+	LD	BC,(_parse)
+	LD	(IX+-4),BC
+	JR	L_31
+L_29:
+;  166			if (*tmp == ';') *tmp = '\0';
+	LD	HL,(IX+-4)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,59
+	SBC	HL,BC
+	JR	NZ,L_30
+	LD	HL,(IX+-4)
+	LD	(HL),0
+L_30:
+	LD	BC,(IX+-4)
+	INC	BC
+	LD	(IX+-4),BC
+L_31:
+	LD	HL,(IX+-4)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_29
+;  167	
+;  168		while(num > 0){
+	JR	L_49
+L_50:
+;  169			skipBlank();
+	CALL	_skipBlank
+;  170			for (i = 0; funcCmp(*parse, funcKeys[i]) == false && i < NUM_FUNCS-1; i++);	// Identify what function it is
+	LD	(IX+-1),0
+	JR	L_36
+L_34:
+	INC	(IX+-1)
+L_36:
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,_funcKeys
+	ADD	HL,BC
+	LD	C,(HL)
+	LD	HL,(_parse)
+	LD	B,0
+	PUSH	BC
+	LD	C,(HL)
+	PUSH	BC
+	CALL	_funcCmp
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_41
+	LD	A,(IX+-1)
+	CP	A,11
+	JR	C,L_34
+L_41:
+;  171			if (i == NUM_FUNCS-1) {
+	LD	A,(IX+-1)
+	CP	A,11
+	JR	NZ,L_40
+;  172				if (setCurrents() == false){
+	CALL	_setCurrents
+	OR	A,A
+	JR	NZ,L_43
+;  173					throw(errUNDEF);			// If none matches, complain
+	LD	BC,2
+	PUSH	BC
+	CALL	_throw
+	POP	BC
+;  174					return false;
+	XOR	A,A
+	JR	L_53
+;  175				}
+;  176			} else {
+L_40:
+;  177				skipToken();							// Skip over the function name itself
+	CALL	_skipToken
+;  178				if (throw((*funcTable[i])()) != errNONE) return false;
+	LD	A,(IX+-1)
+	UEXT	HL
+	LD	L,A
+	LD	BC,HL
+	ADD	HL,HL
+	ADD	HL,BC
+	LD	BC,_funcTable
+	ADD	HL,BC
+	LD	IY,(HL)
+	CALL	__indcall
+	PUSH	HL
+	CALL	_throw
+	POP	BC
+	CALL	__icmpzero
+	JR	Z,L_43
+	XOR	A,A
+	JR	L_53
+;  179			}
+;  180			while (*parse != '\0') parse++;
+L_44:
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+L_43:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_44
+;  181			parse++;
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+;  182			num--;
+	DEC	(IX+6)
+;  183		}
+L_49:
+	XOR	A,A
+	CP	A,(IX+6)
+	JR	C,L_50
+;  184		return true;
+	LD	A,1
+;  185	}
+L_53:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_do_cmd ***************************
+;Name                         Addr/Register   Size   Type
+;_funcTable                          STATIC     36   variable
+;_skipToken                          IMPORT  -----   function
+;_throw                              IMPORT  -----   function
+;_setCurrents                        IMPORT  -----   function
+;_funcKeys                           STATIC     12   variable
+;_funcCmp                            IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;tmp                                   IX-4      3   variable
+;i                                     IX-1      1   variable
+;num                                   IX+6      1   parameter
+
+
+; Stack Frame Size: 13 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  186	
+;  187	//----------------------------------Builtins-----------------------------------
+;  188	
+;  189	/* Exits the monitor */
+;  190	static enum errList gsh_exit() {
+_gsh_exit:
+;  191		doExit = true;
+	LD	A,1
+	LD	(_doExit),A
+	OR	A,A
+;  192		return errNONE;
+	SBC	HL,HL
+;  193	}
+	RET	
+
+
+;**************************** _gsh_exit ***************************
+;Name                         Addr/Register   Size   Type
+;_doExit                             STATIC      1   variable
+
+
+; Stack Frame Size: 6 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  194	
+;  195	static enum errList gsh_delay() {
+_gsh_delay:
+	LD	HL,-3
+	CALL	__frameset
+;  196		uint32_t *arg;
+;  197		if (isEOI()) return errSYNTAX;
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_56
+	LD	HL,1
+	JR	L_58
+;  198		else arg = (uint32_t*)strToHEX();
+L_56:
+	CALL	_strToHEX
+	LD	(IX+-3),HL
+;  199	
+;  200		delay(*arg);
+	LD	BC,(HL)
+	PUSH	BC
+	CALL	_delay
+	POP	BC
+	OR	A,A
+;  201		return errNONE;
+	SBC	HL,HL
+;  202	}
+L_58:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_delay ***************************
+;Name                         Addr/Register   Size   Type
+;_delay                              IMPORT  -----   function
+;_strToHEX                           IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;arg                                   IX-3      3   variable
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  203	
+;  204	static enum errList gsh_echo() {
+_gsh_echo:
+	LD	HL,-12
+	CALL	__frameset
+;  205		char *end;
+;  206		uint32_t *val;
+;  207		char *ptr = parse;
+	LD	BC,(_parse)
+	LD	(IX+-3),BC
+;  208		puts("");
+	LD	BC,L__45
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+;  209		while (*ptr != '\0' && *ptr != '\"') ptr++;
+	JR	L_61
+L_62:
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_61:
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_64
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,34
+	SBC	HL,BC
+	JR	NZ,L_62
+L_64:
+;  210		if (*ptr == '\0') return errSYNTAX;
+	LD	HL,(IX+-3)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_66
+	LD	HL,1
+	JR	L_82
+L_66:
+;  211		ptr++;
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+;  212		end = ptr;
+	LD	(IX+-6),BC
+;  213		while (*end != '\0' && *end != '\"') end++;
+	JR	L_69
+L_70:
+	LD	BC,(IX+-6)
+	INC	BC
+	LD	(IX+-6),BC
+L_69:
+	LD	HL,(IX+-6)
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_72
+	LD	HL,(IX+-6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,34
+	SBC	HL,BC
+	JR	NZ,L_70
+L_72:
+;  214		if (*end == '\0') return errSYNTAX;
+	LD	HL,(IX+-6)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_73
+	LD	HL,1
+	JR	L_82
+L_73:
+;  215		*end = '\0';
+	LD	HL,(IX+-6)
+	LD	(HL),0
+;  216	
+;  217		parse = (end+1);
+	LD	BC,(IX+-6)
+	INC	BC
+	LD	(_parse),BC
+;  218	
+;  219		if (isEOI()) return errSYNTAX;
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_76
+	LD	HL,1
+	JR	L_82
+L_76:
+;  220	
+;  221		getArg(val);
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_80
+	LD	HL,3
+	JR	L_82
+L_80:
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_79
+	LD	BC,(_parse)
+	LD	(IX+-12),BC
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+	LD	HL,(IX+-12)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	LD	(IX+-9),HL
+	JR	L_81
+L_79:
+	CALL	_strToHEX
+	LD	(IX+-9),HL
+L_81:
+;  222		vprintf(ptr, *val);
+	LD	IY,(IX+-9)
+	LD	A,(IY+3)
+	LD	H,0
+	LD	L,A
+	PUSH	HL
+	LD	BC,(IY)
+	PUSH	BC
+	LD	BC,(IX+-3)
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+	POP	BC
+	POP	BC
+;  223		*end = '\"';
+	LD	HL,(IX+-6)
+	LD	(HL),34
+	OR	A,A
+;  224		return errNONE;
+	SBC	HL,HL
+;  225	}
+L_82:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_echo ***************************
+;Name                         Addr/Register   Size   Type
+;_vprintf                            IMPORT  -----   function
+;_strToHEX                           IMPORT  -----   function
+;_getMonVar                          IMPORT  -----   function
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_puts                               IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;val                                   IX-9      3   variable
+;end                                   IX-6      3   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 18 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__45:
+	DB	0
+	SEGMENT CODE
+;  226	
+;  227	/* Starts executing code from a place in memory */
+;  228	static enum errList gsh_execute() {
+_gsh_execute:
+	LD	HL,-3
+	CALL	__frameset
+;  229		void (*ptr)(void) = (void*)current_addr;
+	LD	BC,(_current_addr)
+	LD	(IX+-3),BC
+;  230		if (!isEOI() && isAddr()) ptr = (void*)strToHEX();
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_85
+	CALL	_isAddr
+	OR	A,A
+	JR	Z,L_85
+	CALL	_strToHEX
+	LD	(IX+-3),HL
+L_85:
+;  231	
+;  232		(*ptr)();			// Call that function
+	LD	IY,(IX+-3)
+	CALL	__indcall
+	OR	A,A
+;  233		return errNONE;		// Return error free, assuming that whatever we call actually returns (good chance it wont)
+	SBC	HL,HL
+;  234	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_execute ***************************
+;Name                         Addr/Register   Size   Type
+;_strToHEX                           IMPORT  -----   function
+;_isAddr                             IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_current_addr                       STATIC      3   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 9 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  235	
+;  236	static enum errList gsh_help() {
+_gsh_help:
+	LD	HL,-6
+	CALL	__frameset
+;  237		int i;
+;  238		for (i = 0; helpText[i] != NULL; i++) {
+	LD	BC,0
+	LD	(IX+-3),BC
+	JR	L_93
+L_91:
+;  239			puts(helpText[i]);
+	LD	HL,(IX+-6)
+	LD	BC,(HL)
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+;  240			if (i % 2) while ((os_GetCSC()) != sk_Enter);	// Require a keypress to print another 2 lines
+	LD	HL,(IX+-3)
+	LD	BC,2
+	CALL	__irems
+	CALL	__icmpzero
+	JR	Z,L_92
+L_88:
+	CALL	_os_GetCSC
+	UEXT	HL
+	LD	L,A
+	OR	A,A
+	LD	BC,9
+	SBC	HL,BC
+	JR	NZ,L_88
+;  241		}
+L_92:
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_93:
+	LD	HL,(IX+-3)
+	LD	BC,HL
+	ADD	HL,HL
+	ADD	HL,BC
+	LD	BC,_helpText
+	ADD	HL,BC
+	LD	(IX+-6),HL
+	LD	HL,(HL)
+	CALL	__icmpzero
+	JR	NZ,L_91
+	OR	A,A
+;  242		return errNONE;
+	SBC	HL,HL
+;  243	}
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_help ***************************
+;Name                         Addr/Register   Size   Type
+;_helpText                           STATIC     36   variable
+;_os_GetCSC                          IMPORT  -----   function
+;_puts                               IMPORT  -----   function
+;G_0                                   IX-6      3   variable
+;i                                     IX-3      3   variable
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  244	
+;  245	/* Writes bytes to memory */
+;  246	static enum errList gsh_deposit() {
+_gsh_deposit:
+	LD	HL,-7
+	CALL	__frameset
+;  247		uint8_t *end, *ptr = (uint8_t*)current_addr;	// Create pointers for the start and end of the section
+	LD	BC,(_current_addr)
+	LD	(IX+-3),BC
+;  248		uint8_t val;
+;  249	
+;  250		skipBlank();
+	CALL	_skipBlank
+;  251		if (isCurrentVar){
+	LD	A,(_isCurrentVar)
+	OR	A,A
+	JR	Z,L_102
+;  252			ptr = (uint8_t*)strToHEX();
+	CALL	_strToHEX
+	LD	(IX+-3),HL
+;  253		} else {
+	JR	L_103
+L_102:
+;  254			if (*skipBlank() == '\0') return errNOARGS;
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_98
+	LD	HL,3
+	JR	L_104
+;  255			while (!isEOI()) {
+L_99:
+;  256				val = (uint8_t)strToHEX();
+	CALL	_strToHEX
+	LD	BC,HL
+	LD	(IX+-4),C
+;  257				*(uint8_t*)(ptr++) = (uint8_t)val;
+	LD	BC,(IX+-3)
+	LD	(IX+-7),BC
+	LD	HL,BC
+	LD	A,(IX+-4)
+	LD	(HL),A
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+;  258				skipHex();
+	CALL	_skipHex
+;  259			}
+L_98:
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_99
+;  260		}
+L_103:
+	OR	A,A
+;  261		return errNONE;
+	SBC	HL,HL
+;  262	}
+L_104:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_deposit ***************************
+;Name                         Addr/Register   Size   Type
+;_skipHex                            IMPORT  -----   function
+;_strToHEX                           IMPORT  -----   function
+;_isCurrentVar                       IMPORT      1   variable
+;_skipBlank                          IMPORT  -----   function
+;_current_addr                       STATIC      3   variable
+;val                                   IX-4      1   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 13 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  263	
+;  264	static enum errList read_range(char *ptr,char *end) {
+_read_range:
+	LD	HL,-4
+	CALL	__frameset
+;  265		if (end != NULL){									// If we hit a range identifier...
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	JR	Z,L_117
+;  266			uint8_t column;									// Create something to track how many columns have been printed so far
+;  267			char *addrBuff;
+;  268			column = 0;
+	LD	(IX+-1),0
+;  269			while (ptr <= end){								// Continue until we've reached the end of the range
+	JR	L_114
+L_115:
+;  270				int i;
+;  271				if (ptr <= end){
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	C,L_111
+;  272					vprintf("\n");							// Then set up a new line
+	LD	BC,L__69
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  273					column = 0;								// And print out the location header
+	LD	(IX+-1),0
+;  274					printLong((uint32_t)ptr);
+	LD	BC,(IX+6)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;  275					vprintf(" | ");
+	LD	BC,L__70
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  276				}
+;  277				while (column < 4 && ptr <= end){
+	JR	L_111
+L_112:
+;  278					printByte(*ptr++);						// Print data byte at this address
+	LD	BC,(IX+6)
+	LD	(IX+-4),BC
+	LD	BC,(IX+6)
+	INC	BC
+	LD	(IX+6),BC
+	LD	HL,(IX+-4)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_printByte
+	POP	BC
+;  279					putchar(' ');
+	LD	BC,32
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;  280					column++;								// Increase our column number
+	INC	(IX+-1)
+;  281					queryBreak();
+	CALL	_os_GetCSC
+	UEXT	HL
+	LD	L,A
+	OR	A,A
+	LD	BC,15
+	SBC	HL,BC
+	JR	NZ,L_111
+	LD	HL,7
+	JR	L_119
+;  282				}
+L_111:
+	LD	A,(IX+-1)
+	CP	A,4
+	JR	NC,L_114
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_112
+;  283			}
+L_114:
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_115
+	JR	L_118
+;  284		} else {
+L_117:
+;  285			vprintf("\n");									// Then set up a new line
+	LD	BC,L__75
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  286			printLong((uint32_t)ptr);
+	LD	BC,(IX+6)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;  287			vprintf(" | ");
+	LD	BC,L__76
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  288			printByte(*ptr);
+	LD	HL,(IX+6)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_printByte
+	POP	BC
+;  289		}
+L_118:
+	OR	A,A
+;  290		return errNONE;
+	SBC	HL,HL
+;  291	}
+L_119:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _read_range ***************************
+;Name                         Addr/Register   Size   Type
+;_os_GetCSC                          IMPORT  -----   function
+;_putchar                            IMPORT  -----   function
+;_printByte                          IMPORT  -----   function
+;_printLong                          IMPORT  -----   function
+;_vprintf                            IMPORT  -----   function
+;column                                IX-1      1   variable
+;end                                   IX+9      3   parameter
+;ptr                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 16 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__69:
+	DB	10,0
+L__70:
+	DB	" | "
+	DB	0
+L__75:
+	DB	10,0
+L__76:
+	DB	" | "
+	DB	0
+	SEGMENT CODE
+;  292	
+;  293	static enum errList read_range_ascii(char *ptr,char *end) {
+_read_range_ascii:
+	LD	HL,-4
+	CALL	__frameset
+;  294		if (end != NULL){									// If we hit a range identifier...
+	LD	HL,(IX+9)
+	CALL	__icmpzero
+	JR	Z,L_139
+;  295			uint8_t column;									// Create something to track how many columns have been printed so far
+;  296			char *addrBuff;
+;  297			column = 0;
+	LD	(IX+-1),0
+;  298			while (ptr <= end){								// Continue until we've reached the end of the range
+	JR	L_133
+L_134:
+;  299				int i;
+;  300				if (ptr <= end){
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	C,L_130
+;  301					vprintf("\n");							// Then set up a new line
+	LD	BC,L__80
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  302					column = 0;								// And print out the location header
+	LD	(IX+-1),0
+;  303					printLong((uint32_t)ptr);
+	LD	BC,(IX+6)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;  304					vprintf(" | ");
+	LD	BC,L__81
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  305				}
+;  306				while (column < 8 && ptr <= end){
+	JR	L_130
+L_131:
+;  307					if (*ptr >= 0x20 && *ptr < 0x7F) putchar(*ptr++);
+	LD	HL,(IX+6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	JP	M,L_125
+	LD	HL,(IX+6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,127
+	SBC	HL,BC
+	CALL	__setflag
+	JP	P,L_125
+	LD	BC,(IX+6)
+	LD	(IX+-4),BC
+	LD	BC,(IX+6)
+	INC	BC
+	LD	(IX+6),BC
+	LD	HL,(IX+-4)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  308					else putchar('.');
+	JR	L_127
+L_125:
+	LD	BC,46
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+L_127:
+;  309					column++;								// Increase our column number
+	INC	(IX+-1)
+;  310					queryBreak();
+	CALL	_os_GetCSC
+	UEXT	HL
+	LD	L,A
+	OR	A,A
+	LD	BC,15
+	SBC	HL,BC
+	JR	NZ,L_130
+	LD	HL,7
+	JR	L_141
+;  311				}
+L_130:
+	LD	A,(IX+-1)
+	CP	A,8
+	JR	NC,L_133
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_131
+;  312			}
+L_133:
+	LD	BC,(IX+6)
+	LD	HL,(IX+9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_134
+	JR	L_140
+;  313		} else {
+L_139:
+;  314			vprintf("\n");									// Then set up a new line
+	LD	BC,L__88
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  315			printLong((uint32_t)ptr);
+	LD	BC,(IX+6)
+	LD	DE,BC
+	XOR	A,A
+	LD	C,A
+	LD	B,0
+	PUSH	BC
+	PUSH	DE
+	CALL	_printLong
+	POP	BC
+	POP	BC
+;  316			vprintf(" | ");
+	LD	BC,L__89
+	PUSH	BC
+	CALL	_vprintf
+	POP	BC
+;  317			if (*ptr >= 0x20 && *ptr < 0x7F) putchar(*ptr);
+	LD	HL,(IX+6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,32
+	SBC	HL,BC
+	CALL	__setflag
+	JP	M,L_137
+	LD	HL,(IX+6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	OR	A,A
+	LD	BC,127
+	SBC	HL,BC
+	CALL	__setflag
+	JP	P,L_137
+	LD	HL,(IX+6)
+	LD	A,(HL)
+	LD	B,A
+	SEXT	HL
+	LD	L,B
+	PUSH	HL
+	CALL	_putchar
+	POP	BC
+;  318			else putchar('.');
+	JR	L_140
+L_137:
+	LD	BC,46
+	PUSH	BC
+	CALL	_putchar
+	POP	BC
+;  319		}
+L_140:
+	OR	A,A
+;  320		return errNONE;
+	SBC	HL,HL
+;  321	}
+L_141:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _read_range_ascii ***************************
+;Name                         Addr/Register   Size   Type
+;_os_GetCSC                          IMPORT  -----   function
+;_putchar                            IMPORT  -----   function
+;_printLong                          IMPORT  -----   function
+;_vprintf                            IMPORT  -----   function
+;column                                IX-1      1   variable
+;end                                   IX+9      3   parameter
+;ptr                                   IX+6      3   parameter
+
+
+; Stack Frame Size: 16 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__80:
+	DB	10,0
+L__81:
+	DB	" | "
+	DB	0
+L__88:
+	DB	10,0
+L__89:
+	DB	" | "
+	DB	0
+	SEGMENT CODE
+;  322	
+;  323	/* Handles viewing of memory */
+;  324	static enum errList gsh_view() {
+_gsh_view:
+	LD	HL,-6
+	CALL	__frameset
+;  325		char *ptr, *end;									// Create start and end pointers
+;  326		if (!isEOI()){
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_152
+;  327			while(*parse != '\0'){
+	JR	L_147
+L_148:
+;  328				skipBlank();
+	CALL	_skipBlank
+;  329				if (isVar()){
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_146
+;  330					read_range((char*)getMonVar(*parse), (char*)0x00000000);
+	LD	HL,(_parse)
+	LD	C,(HL)
+	LD	DE,0
+	PUSH	DE
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	PUSH	HL
+	CALL	_read_range
+	POP	BC
+	POP	BC
+;  331					parse++;
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+;  332				} else {
+	JR	L_147
+L_146:
+;  333					if (!getRange(&ptr, &end)) return errSYNTAX;
+	PEA	IX+-6
+	PEA	IX+-3
+	CALL	_getRange
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_144
+	LD	HL,1
+	JR	L_154
+L_144:
+;  334					read_range(ptr, end);
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,(IX+-3)
+	PUSH	BC
+	CALL	_read_range
+	POP	BC
+	POP	BC
+;  335				}
+;  336			}
+L_147:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_148
+	JR	L_153
+;  337		} else {
+L_152:
+;  338			if (isCurrentVar) read_range(current_addr, end_addr);
+	LD	A,(_isCurrentVar)
+	OR	A,A
+	JR	Z,L_150
+	LD	BC,(_end_addr)
+	PUSH	BC
+	LD	BC,(_current_addr)
+	PUSH	BC
+	CALL	_read_range
+	POP	BC
+	POP	BC
+;  339			else read_range(current_addr, end_addr);
+	JR	L_153
+L_150:
+	LD	BC,(_end_addr)
+	PUSH	BC
+	LD	BC,(_current_addr)
+	PUSH	BC
+	CALL	_read_range
+	POP	BC
+	POP	BC
+;  340		}
+L_153:
+;  341		puts("");
+	LD	BC,L__98
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+	OR	A,A
+;  342		return errNONE;										// Return error free
+	SBC	HL,HL
+;  343	}
+L_154:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_view ***************************
+;Name                         Addr/Register   Size   Type
+;_puts                               IMPORT  -----   function
+;_current_addr                       STATIC      3   variable
+;_end_addr                           STATIC      3   variable
+;_isCurrentVar                       IMPORT      1   variable
+;_getRange                           IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;_getMonVar                          IMPORT  -----   function
+;_read_range                         STATIC  -----   function
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;end                                   IX-6      3   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__98:
+	DB	0
+	SEGMENT CODE
+;  344	
+;  345	static enum errList gsh_view_ascii() {
+_gsh_view_ascii:
+	LD	HL,-6
+	CALL	__frameset
+;  346		char *ptr, *end;									// Create start and end pointers
+;  347		if (!isEOI()){
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	Z,L_165
+;  348			while(*parse != '\0'){
+	JR	L_160
+L_161:
+;  349				skipBlank();
+	CALL	_skipBlank
+;  350				if (isVar()){
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_159
+;  351					read_range_ascii((char*)getMonVar(*parse), (char*)0x00000000);
+	LD	HL,(_parse)
+	LD	C,(HL)
+	LD	DE,0
+	PUSH	DE
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	PUSH	HL
+	CALL	_read_range_ascii
+	POP	BC
+	POP	BC
+;  352					parse++;
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+;  353				} else {
+	JR	L_160
+L_159:
+;  354					if (!getRange(&ptr, &end)) return errSYNTAX;
+	PEA	IX+-6
+	PEA	IX+-3
+	CALL	_getRange
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_157
+	LD	HL,1
+	JR	L_167
+L_157:
+;  355					read_range_ascii(ptr, end);
+	LD	BC,(IX+-6)
+	PUSH	BC
+	LD	BC,(IX+-3)
+	PUSH	BC
+	CALL	_read_range_ascii
+	POP	BC
+	POP	BC
+;  356				}
+;  357			}
+L_160:
+	LD	HL,(_parse)
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_161
+	JR	L_166
+;  358		} else {
+L_165:
+;  359			if (isCurrentVar) read_range_ascii(current_addr, end_addr);
+	LD	A,(_isCurrentVar)
+	OR	A,A
+	JR	Z,L_163
+	LD	BC,(_end_addr)
+	PUSH	BC
+	LD	BC,(_current_addr)
+	PUSH	BC
+	CALL	_read_range_ascii
+	POP	BC
+	POP	BC
+;  360			else read_range_ascii(current_addr, end_addr);
+	JR	L_166
+L_163:
+	LD	BC,(_end_addr)
+	PUSH	BC
+	LD	BC,(_current_addr)
+	PUSH	BC
+	CALL	_read_range_ascii
+	POP	BC
+	POP	BC
+;  361		}
+L_166:
+;  362		puts("");
+	LD	BC,L__105
+	PUSH	BC
+	CALL	_puts
+	POP	BC
+	OR	A,A
+;  363		return errNONE;
+	SBC	HL,HL
+;  364	}
+L_167:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_view_ascii ***************************
+;Name                         Addr/Register   Size   Type
+;_puts                               IMPORT  -----   function
+;_current_addr                       STATIC      3   variable
+;_end_addr                           STATIC      3   variable
+;_isCurrentVar                       IMPORT      1   variable
+;_getRange                           IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;_getMonVar                          IMPORT  -----   function
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;end                                   IX-6      3   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 12 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	SEGMENT STRSECT
+L__105:
+	DB	0
+	SEGMENT CODE
+;  365	
+;  366	/* Copies a range of data */
+;  367	static enum errList gsh_copy() {
+_gsh_copy:
+	LD	HL,-24
+	CALL	__frameset
+;  368		char *ptr, *end, *dest;								// Create pointers for start, end, and destination of block
+;  369	
+;  370		if (isRange()){
+	CALL	_isRange
+	OR	A,A
+	JR	Z,L_170
+;  371			if (!getRange(&ptr, &end)) return errSYNTAX;
+	PEA	IX+-9
+	PEA	IX+-6
+	CALL	_getRange
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_172
+	LD	HL,1
+	JR	L_189
+;  372		} else {
+L_170:
+;  373			ptr = current_addr;
+	LD	BC,(_current_addr)
+	LD	(IX+-6),BC
+;  374			end = end_addr;
+	LD	BC,(_end_addr)
+	LD	(IX+-9),BC
+;  375		}
+L_172:
+;  376		getArg(dest);
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_176
+	LD	HL,3
+	JR	L_189
+L_176:
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_175
+	LD	BC,(_parse)
+	LD	(IX+-12),BC
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+	LD	HL,(IX+-12)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	LD	(IX+-3),HL
+	JR	L_177
+L_175:
+	CALL	_strToHEX
+	LD	(IX+-3),HL
+L_177:
+;  377	
+;  378		if (dest <= ptr) {									// If the destination is below the source in memory,
+	LD	BC,(IX+-3)
+	LD	HL,(IX+-6)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_180
+	JR	L_187
+;  379			while (ptr <= end) outb(*ptr++, dest++);		// then copy it starting at the beginning
+L_181:
+	LD	BC,(IX+-6)
+	LD	(IX+-15),BC
+	LD	BC,(IX+-3)
+	LD	(IX+-18),BC
+	LD	HL,(IX+-15)
+	LD	A,(HL)
+	LD	HL,(IX+-18)
+	LD	(HL),A
+	LD	BC,(IX+-6)
+	INC	BC
+	LD	(IX+-6),BC
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_180:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_181
+	JR	L_188
+;  380		} else {
+L_187:
+;  381			dest += end - ptr;								// If the destination is above the start of the source,
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	LD	DE,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	ADD	HL,DE
+	LD	(IX+-3),HL
+;  382			while (end >= ptr) outb(*end--, dest--);		// then copy starting at the end of the source
+	JR	L_184
+L_185:
+	LD	BC,(IX+-9)
+	LD	(IX+-21),BC
+	LD	BC,(IX+-3)
+	LD	(IX+-24),BC
+	LD	HL,(IX+-21)
+	LD	A,(HL)
+	LD	HL,(IX+-24)
+	LD	(HL),A
+	LD	IY,(IX+-9)
+	LEA	BC,IY+-1
+	LD	(IX+-9),BC
+	LD	IY,(IX+-3)
+	LEA	IY,IY+-1
+	LD	(IX+-3),IY
+L_184:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_185
+;  383		}													// This is done to avoid overwriting the source before we can copy it
+L_188:
+	OR	A,A
+;  384	
+;  385		return errNONE;										// Return error free
+	SBC	HL,HL
+;  386	}
+L_189:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_copy ***************************
+;Name                         Addr/Register   Size   Type
+;_strToHEX                           IMPORT  -----   function
+;_getMonVar                          IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_end_addr                           STATIC      3   variable
+;_current_addr                       STATIC      3   variable
+;_getRange                           IMPORT  -----   function
+;_isRange                            IMPORT  -----   function
+;end                                   IX-9      3   variable
+;ptr                                   IX-6      3   variable
+;dest                                  IX-3      3   variable
+
+
+; Stack Frame Size: 30 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  387	
+;  388	/* Moves a block of data, filling the old space with 00 */
+;  389	static enum errList gsh_move() {
+_gsh_move:
+	LD	HL,-24
+	CALL	__frameset
+;  390		char *ptr, *end, *dest;								// Create pointers for start, end, and destination of block
+;  391	
+;  392		if (isRange()){
+	CALL	_isRange
+	OR	A,A
+	JR	Z,L_192
+;  393			if (!getRange(&ptr, &end)) return errSYNTAX;
+	PEA	IX+-9
+	PEA	IX+-6
+	CALL	_getRange
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_194
+	LD	HL,1
+	JR	L_211
+;  394		} else {
+L_192:
+;  395			ptr = current_addr;
+	LD	BC,(_current_addr)
+	LD	(IX+-6),BC
+;  396			end = end_addr;
+	LD	BC,(_end_addr)
+	LD	(IX+-9),BC
+;  397		}
+L_194:
+;  398		getArg(dest);
+	CALL	_skipBlank
+	LD	A,(HL)
+	OR	A,A
+	JR	NZ,L_198
+	LD	HL,3
+	JR	L_211
+L_198:
+	CALL	_isVar
+	OR	A,A
+	JR	Z,L_197
+	LD	BC,(_parse)
+	LD	(IX+-12),BC
+	LD	BC,(_parse)
+	INC	BC
+	LD	(_parse),BC
+	LD	HL,(IX+-12)
+	LD	C,(HL)
+	LD	B,0
+	PUSH	BC
+	CALL	_getMonVar
+	POP	BC
+	LD	(IX+-3),HL
+	JR	L_199
+L_197:
+	CALL	_strToHEX
+	LD	(IX+-3),HL
+L_199:
+;  399	
+;  400		if (dest <= ptr) {									// If the destination is below the source in memory,
+	LD	BC,(IX+-3)
+	LD	HL,(IX+-6)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_202
+	JR	L_209
+;  401			while (ptr <= end){
+L_203:
+;  402				outb(*ptr, dest++);						// then copy it starting at the beginning
+	LD	BC,(IX+-3)
+	LD	(IX+-15),BC
+	LD	HL,(IX+-6)
+	LD	A,(HL)
+	LD	HL,(IX+-15)
+	LD	(HL),A
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+;  403				outb((uint8_t)NULL, ptr++);
+	LD	BC,(IX+-6)
+	LD	(IX+-18),BC
+	LD	HL,BC
+	LD	(HL),0
+	LD	BC,(IX+-6)
+	INC	BC
+	LD	(IX+-6),BC
+;  404			}
+L_202:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_203
+	JR	L_210
+;  405		} else {
+L_209:
+;  406			dest += end - ptr;								// If the destination is above the start of the source,
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	LD	DE,(IX+-3)
+	OR	A,A
+	SBC	HL,BC
+	ADD	HL,DE
+	LD	(IX+-3),HL
+;  407			while (end >= ptr){
+	JR	L_206
+L_207:
+;  408				outb(*end, dest--);						// then copy starting at the end of the source
+	LD	BC,(IX+-3)
+	LD	(IX+-21),BC
+	LD	HL,(IX+-9)
+	LD	A,(HL)
+	LD	HL,(IX+-21)
+	LD	(HL),A
+	LD	IY,(IX+-3)
+	LEA	BC,IY+-1
+	LD	(IX+-3),BC
+;  409				outb((uint8_t)NULL, end--);
+	LD	BC,(IX+-9)
+	LD	(IX+-24),BC
+	LD	HL,BC
+	LD	(HL),0
+	LD	IY,(IX+-9)
+	LEA	IY,IY+-1
+	LD	(IX+-9),IY
+;  410			}
+L_206:
+	LD	BC,(IX+-6)
+	LD	HL,(IX+-9)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_207
+;  411		}													// This is done to avoid overwriting the source before we can copy it
+L_210:
+	OR	A,A
+;  412	
+;  413		return errNONE;										// Return error free
+	SBC	HL,HL
+;  414	}
+L_211:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_move ***************************
+;Name                         Addr/Register   Size   Type
+;_strToHEX                           IMPORT  -----   function
+;_getMonVar                          IMPORT  -----   function
+;_parse                              STATIC      3   variable
+;_isVar                              IMPORT  -----   function
+;_skipBlank                          IMPORT  -----   function
+;_end_addr                           STATIC      3   variable
+;_current_addr                       STATIC      3   variable
+;_getRange                           IMPORT  -----   function
+;_isRange                            IMPORT  -----   function
+;end                                   IX-9      3   variable
+;ptr                                   IX-6      3   variable
+;dest                                  IX-3      3   variable
+
+
+; Stack Frame Size: 30 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+;  415	
+;  416	/* Fills a range with a pattern byte */
+;  417	static enum errList gsh_fill() {
+_gsh_fill:
+	LD	HL,-10
+	CALL	__frameset
+;  418		char *ptr, *end;									// Create pointers for the start and end of the section
+;  419		uint8_t val;										// The fill pattern itself
+;  420	
+;  421		if (isRange()){
+	CALL	_isRange
+	OR	A,A
+	JR	Z,L_216
+;  422			if (!getRange(&ptr, &end)) return errSYNTAX;
+	PEA	IX+-6
+	PEA	IX+-3
+	CALL	_getRange
+	POP	BC
+	POP	BC
+	OR	A,A
+	JR	NZ,L_217
+	LD	HL,1
+	JR	L_222
+;  423		} else {
+L_216:
+;  424			ptr = current_addr;
+	LD	BC,(_current_addr)
+	LD	(IX+-3),BC
+;  425			if (end_addr == NULL) end = current_addr;
+	LD	HL,(_end_addr)
+	CALL	__icmpzero
+	JR	NZ,L_214
+	LD	BC,(_current_addr)
+	LD	(IX+-6),BC
+;  426			else end = end_addr;
+	JR	L_217
+L_214:
+	LD	BC,(_end_addr)
+	LD	(IX+-6),BC
+;  427		}
+L_217:
+;  428		val = (uint8_t)strToHEX();
+	CALL	_strToHEX
+	LD	BC,HL
+	LD	(IX+-7),C
+;  429	
+;  430		while (ptr <= end) *(uint8_t*)(ptr++) = val;		// Set every byte from *ptr to *end to the pattern in val
+	JR	L_219
+L_220:
+	LD	BC,(IX+-3)
+	LD	(IX+-10),BC
+	LD	HL,BC
+	LD	A,(IX+-7)
+	LD	(HL),A
+	LD	BC,(IX+-3)
+	INC	BC
+	LD	(IX+-3),BC
+L_219:
+	LD	BC,(IX+-3)
+	LD	HL,(IX+-6)
+	OR	A,A
+	SBC	HL,BC
+	JR	NC,L_220
+	OR	A,A
+;  431		return errNONE;										// Return error free
+	SBC	HL,HL
+;  432	}
+L_222:
+	LD	SP,IX
+	POP	IX
+	RET	
+
+
+;**************************** _gsh_fill ***************************
+;Name                         Addr/Register   Size   Type
+;_strToHEX                           IMPORT  -----   function
+;_end_addr                           STATIC      3   variable
+;_current_addr                       STATIC      3   variable
+;_getRange                           IMPORT  -----   function
+;_isRange                            IMPORT  -----   function
+;val                                   IX-7      1   variable
+;end                                   IX-6      3   variable
+;ptr                                   IX-3      3   variable
+
+
+; Stack Frame Size: 16 (bytes)
+;       Spill Code: 0 (instruction)
+
+
+	XREF _printLong:ROM
+	XREF _printByte:ROM
+	XREF _getRange:ROM
+	XREF _getMonVar:ROM
+	XREF _throw:ROM
+	XREF _strToHEX:ROM
+	XREF _funcCmp:ROM
+	XREF _skipHex:ROM
+	XREF _skipToken:ROM
+	XREF _skipBlank:ROM
+	XREF _isAddr:ROM
+	XREF _setCurrents:ROM
+	XREF _isVar:ROM
+	XREF _isRange:ROM
+	XREF _print_prompt:ROM
+	XREF _gets:ROM
+	XREF _puts:ROM
+	XREF _putchar:ROM
+	XREF _isCurrentVar:ROM
+	XREF _vprintf:ROM
+	XREF _asm_DrawStatusBar:ROM
+	XREF _asm_ClrLCD:ROM
+	XREF _asm_HomeUp:ROM
+	XREF __OS:ROM
+	XREF _os_GetCSC:ROM
+	XREF _delay:ROM
+	XREF _strtoul:ROM
+	XREF __indcall:ROM
+	XREF __lcmpu:ROM
+	XREF __lsub:ROM
+	XREF __irems:ROM
+	XREF __frameset:ROM
+	XREF __setflag:ROM
+	XREF __icmpzero:ROM
+	XDEF _gsh_do_cmd
+	XDEF _main
+	XDEF _inBuffer
+	XDEF _numLoops
+	XDEF _numCMDs
+	XDEF _tmp
+	XDEF _cmdStart
+	XDEF _end_addr
+	XDEF _current_addr
+	XDEF _parse
+	XDEF _doExit
+	XDEF _helpText
+	XDEF _hexTable
+	XDEF _errors
+	XDEF _funcKeys
+	XDEF _funcTable
+	END
